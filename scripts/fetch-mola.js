@@ -3,7 +3,8 @@
  * Downloads MOLA MEGDR topography data and converts it to a compact format.
  *
  * Source: NASA PDS Geosciences Node (public domain)
- * Resolution: 16 pixels/degree (~115m/pixel), 5760x2880 grid, single global file
+ * Resolution: 128 pixels/degree (~14m/pixel), 46080x23040 grid, ~2.1 GB
+ * Requires ~6 GB of RAM. Run with: node --max-old-space-size=8192 scripts/fetch-mola.js
  *
  * Run: node scripts/fetch-mola.js
  * Output: public/data/mola-topo.bin (Int16Array, system endian)
@@ -18,13 +19,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
 const OUTPUT_DIR = join(PROJECT_ROOT, "public", "data");
 
-const PPD = 16;
-const WIDTH = 360 * PPD;   // 5760
-const HEIGHT = 180 * PPD;  // 2880
+const PPD = 128;
+const WIDTH = 360 * PPD;   // 46080
+const HEIGHT = 180 * PPD;  // 23040
 const EXPECTED_BYTES = WIDTH * HEIGHT * 2; // INT16 = 2 bytes per pixel
 
 const MOLA_URL =
-  "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg016/megt90n000eb.img";
+  "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt90n000hb.img";
 
 async function main() {
   console.log(`Fetching MOLA ${PPD}ppd topography data...`);

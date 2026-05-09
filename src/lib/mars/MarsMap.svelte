@@ -105,7 +105,7 @@
       center: [0, 0],
       zoom: 1.5,
       minZoom: 0,
-      maxZoom: 8,
+      maxZoom: 10,
       renderWorldCopies: false,
       attributionControl: false,
     });

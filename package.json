@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "build:contours": "node scripts/build-contours.js && tippecanoe -o public/data/mars-contours.pmtiles --no-feature-limit --no-tile-size-limit --minimum-zoom=0 --maximum-zoom=8 -l contours --force public/data/mars-contours.json"
+    "build:contours": "node --max-old-space-size=8192 scripts/build-contours.js && tippecanoe -o public/data/mars-contours.pmtiles --no-feature-limit --no-tile-size-limit --minimum-zoom=0 --maximum-zoom=10 -l contours --force public/data/mars-contours.json"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
