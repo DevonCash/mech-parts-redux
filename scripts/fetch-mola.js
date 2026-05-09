@@ -68,26 +68,18 @@ const TILES = [
   { file: "megt44s270hb.img", latTop: -44, lonLeft: 270 },
 ];
 
-function progressBar(current, total, width = 40) {
-  const pct = Math.min(current / total, 1);
-  const filled = Math.round(pct * width);
-  const bar = "█".repeat(filled) + "░".repeat(width - filled);
-  const mb = (current / 1e6).toFixed(1);
-  const totalMb = (total / 1e6).toFixed(1);
-  process.stdout.write(`\r  [${bar}] ${mb} / ${totalMb} MB (${(pct * 100).toFixed(0)}%)`);
-}
 
 /**
- * Download a single tile with streaming progress.
- * Returns a Buffer of the raw bytes.
+ * Download a single tile.
+ * Returns a Uint8Array of the raw bytes.
  */
 async function downloadTile(url, expectedBytes) {
+  const filename = url.split("/").pop();
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url.split("/").pop()}: ${response.statusText}`);
+    throw new Error(`HTTP ${response.status} for ${filename}: ${response.statusText}`);
   }
 
-  const contentLength = Number(response.headers.get("content-length")) || expectedBytes;
   const reader = response.body.getReader();
   const chunks = [];
   let received = 0;
@@ -97,9 +89,7 @@ async function downloadTile(url, expectedBytes) {
     if (done) break;
     chunks.push(value);
     received += value.length;
-    progressBar(received, contentLength);
   }
-  process.stdout.write("\n");
 
   const combined = new Uint8Array(received);
   let offset = 0;
@@ -117,8 +107,36 @@ async function downloadTile(url, expectedBytes) {
   return combined;
 }
 
+const CONCURRENCY = 4;
+
+/**
+ * Stitch a downloaded tile into the full elevation grid.
+ */
+function stitchTile(raw, tile, elevation) {
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const gridX = (tile.lonLeft / TILE_LON_DEG) * TILE_W;
+  const gridY = ((LAT_TOP - tile.latTop) / TILE_LAT_DEG) * TILE_H;
+
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (let ty = 0; ty < TILE_H; ty++) {
+    const outRowStart = (gridY + ty) * WIDTH + gridX;
+    const inRowStart = ty * TILE_W;
+
+    for (let tx = 0; tx < TILE_W; tx++) {
+      const val = view.getInt16((inRowStart + tx) * 2, false); // big-endian
+      elevation[outRowStart + tx] = val;
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+  }
+
+  return { min, max };
+}
+
 async function main() {
-  console.log(`Fetching MOLA ${PPD}ppd topography data (16 tiles)...`);
+  console.log(`Fetching MOLA ${PPD}ppd topography data (16 tiles, ${CONCURRENCY} parallel)...`);
   console.log(`  Output grid: ${WIDTH}×${HEIGHT} (${LAT_TOP}°N to ${-LAT_BOTTOM}°S)`);
   console.log(`  Each tile: ${TILE_W}×${TILE_H} (~${(TILE_BYTES / 1e6).toFixed(0)} MB)\n`);
 
@@ -127,31 +145,38 @@ async function main() {
 
   let min = Infinity;
   let max = -Infinity;
+  let completed = 0;
 
-  for (let t = 0; t < TILES.length; t++) {
-    const tile = TILES[t];
+  // Download tiles in parallel batches
+  async function processTile(tile) {
     const url = `${BASE_URL}/${tile.file}`;
-    console.log(`[${t + 1}/${TILES.length}] ${tile.file}`);
-
     const raw = await downloadTile(url, TILE_BYTES);
-    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    const stats = stitchTile(raw, tile, elevation);
+    completed++;
+    console.log(`  [${completed}/${TILES.length}] ${tile.file} done`);
+    return stats;
+  }
 
-    // Calculate where this tile sits in the output grid
-    const gridX = (tile.lonLeft / TILE_LON_DEG) * TILE_W;
-    const gridY = ((LAT_TOP - tile.latTop) / TILE_LAT_DEG) * TILE_H;
+  // Run with bounded concurrency
+  const pending = new Set();
+  const results = [];
 
-    // Copy tile pixels into the grid, converting big-endian → system endian
-    for (let ty = 0; ty < TILE_H; ty++) {
-      const outRowStart = (gridY + ty) * WIDTH + gridX;
-      const inRowStart = ty * TILE_W;
+  for (const tile of TILES) {
+    const p = processTile(tile).then((stats) => {
+      pending.delete(p);
+      results.push(stats);
+    });
+    pending.add(p);
 
-      for (let tx = 0; tx < TILE_W; tx++) {
-        const val = view.getInt16((inRowStart + tx) * 2, false); // big-endian
-        elevation[outRowStart + tx] = val;
-        if (val < min) min = val;
-        if (val > max) max = val;
-      }
+    if (pending.size >= CONCURRENCY) {
+      await Promise.race(pending);
     }
+  }
+  await Promise.all(pending);
+
+  for (const { min: lo, max: hi } of results) {
+    if (lo < min) min = lo;
+    if (hi > max) max = hi;
   }
 
   console.log(`\n  Elevation range: ${min}m to ${max}m`);
