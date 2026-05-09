@@ -103,14 +103,27 @@ This is more robust than the current approach in `game.ts` (which multiplies rea
 
 ---
 
-## Rendering: Canvas 2D
+## Map Rendering: MapLibre GL JS + PMTiles Globe
 
-**What:** HTML Canvas 2D context for all game rendering.
-**Why:** The wireframe/vector aesthetic is lines, arcs, and text — exactly what Canvas 2D is fast at. No need for WebGL, Three.js, or a game engine. The diegetic terminal-display look is *easier* to achieve with raw draw calls than with a higher-level renderer.
+**What:** MapLibre GL JS with globe projection, contour data served as PMTiles vector tiles.
+**Why:** WebGL-accelerated rendering with native vector tile support. Globe projection renders Mars as a rotatable sphere — no flat-map distortion. PMTiles serves pre-computed contour geometry as a single static file with HTTP range requests, so only visible tiles are loaded at any zoom level.
+**Packages:** `maplibre-gl`, `pmtiles`
 
-Contour lines, hex grids, unit icons, route overlays, fire arcs — these are all simple geometry. Canvas 2D can handle this at 60fps without breaking a sweat, even on the full strategic map.
+Architecture:
+- MapLibre renders Mars as a globe with `projection: { type: "globe" }`
+- Contour lines are pre-computed at build time from MOLA data (marching squares → traced polylines → GeoJSON → vector tiles → PMTiles)
+- Three contour tiers with zoom-dependent visibility: major (2000m, always visible), mid (1000m, zoom 2+), minor (500m, zoom 4+)
+- H3 hex overlays, unit markers, routes, etc. layer on top as MapLibre sources/layers
+- Zoom levels naturally map to H3 resolution levels
+- Same contour data serves both strategic (whole-planet) and tactical (local area) views — the tile pyramid handles LOD automatically
 
-**If we outgrow it:** PixiJS is a drop-in upgrade path for 2D rendering if we ever need WebGL performance (particle effects, large numbers of animated entities). But start with raw Canvas.
+Build pipeline (`npm run build:contours`):
+```
+MOLA binary → marching squares → trace polylines → GeoJSON
+  → geojson-vt (slice tiles) → vt-pbf (encode) → PMTiles (pack)
+```
+
+Build-time dependencies: `geojson-vt`, `vt-pbf` (devDependencies only — not shipped to browser).
 
 ---
 

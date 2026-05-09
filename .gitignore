@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Generated data
+# Run: node scripts/fetch-mola.js (MOLA elevation)
+# Run: npm run build:contours (contour vector tiles)
+public/data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

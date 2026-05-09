@@ -3,6 +3,7 @@
   import { fromStore } from "svelte/store";
   import GameTime from "./cmp/GameTime.svelte";
   import PauseMenu from "./cmp/PauseMenu.svelte";
+  import MarsMap from "./mars/MarsMap.svelte";
   import { handleKeydown } from "./keybinds";
 
   let { game } = $props();
@@ -44,8 +45,9 @@
     />
   </header>
 
-  <p>Game: {game.id}</p>
-  <p>Time: {gameState.current.time}</p>
+  <main class="map-viewport">
+    <MarsMap />
+  </main>
 {/if}
 
 <style>
@@ -101,6 +103,14 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem;
+    position: relative;
+    z-index: 10;
+  }
+
+  .map-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
   }
 
   dialog {
