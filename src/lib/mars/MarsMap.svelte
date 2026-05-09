@@ -20,10 +20,22 @@
         name: "Mars",
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
+          // Raster DEM for 3D terrain
+          terrain: {
+            type: "raster-dem",
+            url: "pmtiles:///data/mars-terrain.pmtiles",
+            encoding: "terrarium",
+            tileSize: 512,
+          },
+          // Vector contour lines
           contours: {
             type: "vector",
             url: "pmtiles:///data/mars-contours.pmtiles",
           },
+        },
+        terrain: {
+          source: "terrain",
+          exaggeration: 1,
         },
         layers: [
           {
@@ -102,8 +114,10 @@
           },
         ],
       },
-      center: [0, 0],
+      center: [0, 15],
       zoom: 1.5,
+      pitch: 30,
+      maxPitch: 85,
       minZoom: 0,
       maxZoom: 10,
       renderWorldCopies: false,
@@ -118,8 +132,8 @@
 
     map.on("error", (e) => {
       const msg = e.error?.message || "";
-      if (msg.includes("pmtiles") || msg.includes("404") || msg.includes("contours")) {
-        error = "Contour data not found. Run: npm run build:contours";
+      if (msg.includes("pmtiles") || msg.includes("404")) {
+        error = "Map data not found. Run: npm run build:terrain && npm run build:contours";
       }
     });
 
@@ -143,7 +157,7 @@
     <div class="overlay error">
       <span>TERRAIN DATA ERROR</span>
       <span class="error-detail">{error}</span>
-      <span class="error-hint">Run: npm run build:contours</span>
+      <span class="error-hint">Run: npm run build:terrain && npm run build:contours</span>
     </div>
   {/if}
 </div>

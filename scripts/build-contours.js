@@ -24,7 +24,7 @@ const MID_INTERVAL = 1000;
 const MAJOR_INTERVAL = 2000;
 
 // MOLA grid dimensions — read from metadata at runtime
-let WIDTH, HEIGHT;
+let WIDTH, HEIGHT, LAT_TOP, LAT_BOTTOM;
 
 // ─── Load MOLA data ──────────────────────────────────────────────────────────
 
@@ -42,6 +42,8 @@ function loadMola() {
 
   WIDTH = meta.width;
   HEIGHT = meta.height;
+  LAT_TOP = meta.latRange[0];
+  LAT_BOTTOM = meta.latRange[1];
 
   return { meta, elevation };
 }
@@ -206,12 +208,13 @@ function tracePolylines(segments) {
 
 /**
  * Convert MOLA pixel coords to [longitude, latitude] (GeoJSON order).
- * MOLA grid: row 0 = 90°N, col 0 = 0°E
- * Output: lng [-180, 180], lat [-90, 90]
+ * MOLA grid: row 0 = LAT_TOP, col 0 = 0°E
+ * Output: lng [-180, 180], lat [LAT_BOTTOM, LAT_TOP]
  */
 function molaToLngLat(px, py) {
   const lng = (px / WIDTH) * 360 - 180;
-  const lat = 90 - (py / HEIGHT) * 180;
+  const latSpan = LAT_TOP - LAT_BOTTOM;
+  const lat = LAT_TOP - (py / HEIGHT) * latSpan;
   return [
     Math.round(lng * 1e4) / 1e4,
     Math.round(lat * 1e4) / 1e4,
