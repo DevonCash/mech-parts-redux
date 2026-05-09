@@ -125,7 +125,10 @@ function main() {
     "-j", "4",
     `"${shiftedVrtPath}"`,
     `"${mbtilesPath}"`,
-  ].join(" "), { stdio: "inherit" });
+  ].join(" "), {
+    stdio: "inherit",
+    env: { ...process.env, PYTHONWARNINGS: "ignore::UserWarning:rasterio" },
+  });
 
   // ── Step 4: MBTiles → PMTiles ─────────────────────────────────────────────
 
