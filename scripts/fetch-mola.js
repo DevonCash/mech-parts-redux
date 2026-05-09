@@ -34,10 +34,10 @@ const BASE_URL = "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1
 //   lat: 90n, 00n (north half, south half)
 //   lon: 000 = 0°E, 180 = 180°E
 const QUADRANTS = [
-  { file: "megt90n000hb.img", rowOff: 0,           colOff: 0 },
-  { file: "megt90n180hb.img", rowOff: 0,           colOff: TILE_WIDTH },
-  { file: "megt00n000hb.img", rowOff: TILE_HEIGHT, colOff: 0 },
-  { file: "megt00n180hb.img", rowOff: TILE_HEIGHT, colOff: TILE_WIDTH },
+  { file: "megt90n000eb.img", rowOff: 0,           colOff: 0 },
+  { file: "megt90n180eb.img", rowOff: 0,           colOff: TILE_WIDTH },
+  { file: "megt00n000eb.img", rowOff: TILE_HEIGHT, colOff: 0 },
+  { file: "megt00n180eb.img", rowOff: TILE_HEIGHT, colOff: TILE_WIDTH },
 ];
 
 async function fetchQuadrant(filename) {
