@@ -128,7 +128,7 @@ function main() {
     `"${mbtilesPath}"`,
   ].join(" "), {
     stdio: "inherit",
-    env: { ...process.env, PYTHONWARNINGS: "ignore::UserWarning:rasterio" },
+    env: { ...process.env, PYTHONWARNINGS: "ignore::UserWarning:rasterio,ignore::FutureWarning:mercantile" },
   });
 
   // ── Step 4: MBTiles → PMTiles ─────────────────────────────────────────────
