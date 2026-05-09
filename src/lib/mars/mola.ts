@@ -28,8 +28,8 @@ export interface MolaData {
 
 export async function loadMola(basePath = "/data"): Promise<MolaData> {
   const [metaRes, binRes] = await Promise.all([
-    fetch(`${basePath}/mola-topo-4ppd.json`),
-    fetch(`${basePath}/mola-topo-4ppd.bin`),
+    fetch(`${basePath}/mola-topo.json`),
+    fetch(`${basePath}/mola-topo.bin`),
   ]);
 
   if (!metaRes.ok) throw new Error(`Failed to load MOLA metadata: ${metaRes.status}`);

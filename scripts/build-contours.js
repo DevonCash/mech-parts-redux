@@ -23,15 +23,14 @@ const MINOR_INTERVAL = 500;
 const MID_INTERVAL = 1000;
 const MAJOR_INTERVAL = 2000;
 
-// MOLA grid dimensions
-const WIDTH = 1440;
-const HEIGHT = 720;
+// MOLA grid dimensions — read from metadata at runtime
+let WIDTH, HEIGHT;
 
 // ─── Load MOLA data ──────────────────────────────────────────────────────────
 
 function loadMola() {
-  const metaPath = join(DATA_DIR, "mola-topo-4ppd.json");
-  const binPath = join(DATA_DIR, "mola-topo-4ppd.bin");
+  const metaPath = join(DATA_DIR, "mola-topo.json");
+  const binPath = join(DATA_DIR, "mola-topo.bin");
 
   const meta = JSON.parse(readFileSync(metaPath, "utf-8"));
   const buf = readFileSync(binPath);
@@ -40,6 +39,9 @@ function loadMola() {
   if (elevation.length !== meta.width * meta.height) {
     throw new Error(`MOLA data size mismatch`);
   }
+
+  WIDTH = meta.width;
+  HEIGHT = meta.height;
 
   return { meta, elevation };
 }

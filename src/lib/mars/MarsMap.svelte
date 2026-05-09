@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
+  import { Protocol } from "pmtiles";
 
   let mapContainer: HTMLDivElement;
   let map: maplibregl.Map;
@@ -9,122 +10,122 @@
   let error = $state<string | null>(null);
 
   onMount(() => {
+    const protocol = new Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
     map = new maplibregl.Map({
       container: mapContainer,
       style: {
         version: 8,
         name: "Mars",
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-        sources: {},
+        sources: {
+          contours: {
+            type: "vector",
+            url: "pmtiles:///data/mars-contours.pmtiles",
+          },
+        },
         layers: [
           {
             id: "background",
             type: "background",
             paint: { "background-color": "#0a0a0a" },
           },
+          // Minor contours (500m) — higher zoom only
+          {
+            id: "contour-minor",
+            type: "line",
+            source: "contours",
+            "source-layer": "contours",
+            filter: ["==", ["get", "class"], "minor"],
+            minzoom: 4,
+            paint: {
+              "line-color": "rgba(255, 255, 255, 0.15)",
+              "line-width": 0.4,
+            },
+          },
+          // Mid contours (1000m)
+          {
+            id: "contour-mid",
+            type: "line",
+            source: "contours",
+            "source-layer": "contours",
+            filter: ["==", ["get", "class"], "mid"],
+            minzoom: 2,
+            paint: {
+              "line-color": "rgba(255, 255, 255, 0.35)",
+              "line-width": [
+                "interpolate", ["linear"], ["zoom"],
+                2, 0.5,
+                6, 1.0,
+              ],
+            },
+          },
+          // Major contours (2000m) — always visible
+          {
+            id: "contour-major",
+            type: "line",
+            source: "contours",
+            "source-layer": "contours",
+            filter: ["==", ["get", "class"], "major"],
+            paint: {
+              "line-color": "rgba(255, 255, 255, 0.6)",
+              "line-width": [
+                "interpolate", ["linear"], ["zoom"],
+                0, 0.6,
+                3, 1.0,
+                6, 1.5,
+              ],
+            },
+          },
+          // Elevation labels on major contours
+          {
+            id: "contour-labels",
+            type: "symbol",
+            source: "contours",
+            "source-layer": "contours",
+            filter: ["==", ["get", "class"], "major"],
+            minzoom: 3,
+            layout: {
+              "symbol-placement": "line",
+              "text-field": ["concat", ["to-string", ["get", "elevation"]], "m"],
+              "text-font": ["Open Sans Regular"],
+              "text-size": 10,
+              "text-max-angle": 30,
+              "symbol-spacing": 250,
+            },
+            paint: {
+              "text-color": "rgba(255, 255, 255, 0.5)",
+              "text-halo-color": "#0a0a0a",
+              "text-halo-width": 1.5,
+            },
+          },
         ],
       },
       center: [0, 0],
       zoom: 1.5,
       minZoom: 0,
-      maxZoom: 6,
+      maxZoom: 8,
       renderWorldCopies: false,
       attributionControl: false,
     });
 
-    map.on("style.load", async () => {
+    map.on("style.load", () => {
       map.setProjection({ type: "globe" });
       map.setSky({});
+      loading = false;
+    });
 
-      try {
-        // Load contour GeoJSON
-        const res = await fetch("/data/mars-contours.json");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const geojson = await res.json();
-
-        map.addSource("contours", {
-          type: "geojson",
-          data: geojson,
-        });
-
-        // Minor contours (500m) — higher zoom only
-        map.addLayer({
-          id: "contour-minor",
-          type: "line",
-          source: "contours",
-          filter: ["==", ["get", "class"], "minor"],
-          minzoom: 4,
-          paint: {
-            "line-color": "rgba(255, 255, 255, 0.15)",
-            "line-width": 0.4,
-          },
-        });
-
-        // Mid contours (1000m)
-        map.addLayer({
-          id: "contour-mid",
-          type: "line",
-          source: "contours",
-          filter: ["==", ["get", "class"], "mid"],
-          minzoom: 2,
-          paint: {
-            "line-color": "rgba(255, 255, 255, 0.35)",
-            "line-width": [
-              "interpolate", ["linear"], ["zoom"],
-              2, 0.5,
-              6, 1.0,
-            ],
-          },
-        });
-
-        // Major contours (2000m) — always visible
-        map.addLayer({
-          id: "contour-major",
-          type: "line",
-          source: "contours",
-          filter: ["==", ["get", "class"], "major"],
-          paint: {
-            "line-color": "rgba(255, 255, 255, 0.6)",
-            "line-width": [
-              "interpolate", ["linear"], ["zoom"],
-              0, 0.6,
-              3, 1.0,
-              6, 1.5,
-            ],
-          },
-        });
-
-        // Elevation labels on major contours
-        map.addLayer({
-          id: "contour-labels",
-          type: "symbol",
-          source: "contours",
-          filter: ["==", ["get", "class"], "major"],
-          minzoom: 3,
-          layout: {
-            "symbol-placement": "line",
-            "text-field": ["concat", ["to-string", ["get", "elevation"]], "m"],
-            "text-font": ["Open Sans Regular"],
-            "text-size": 10,
-            "text-max-angle": 30,
-            "symbol-spacing": 250,
-          },
-          paint: {
-            "text-color": "rgba(255, 255, 255, 0.5)",
-            "text-halo-color": "#0a0a0a",
-            "text-halo-width": 1.5,
-          },
-        });
-
-        loading = false;
-      } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
-        loading = false;
+    map.on("error", (e) => {
+      const msg = e.error?.message || "";
+      if (msg.includes("pmtiles") || msg.includes("404") || msg.includes("contours")) {
+        error = "Contour data not found. Run: npm run build:contours";
       }
     });
 
     return () => {
       map.remove();
+      maplibregl.removeProtocol("pmtiles");
     };
   });
 </script>
@@ -160,7 +161,6 @@
     background: #0a0a0a;
   }
 
-  /* Override MapLibre defaults */
   .map :global(.maplibregl-canvas) {
     outline: none;
   }
@@ -180,7 +180,7 @@
   }
 
   .map :global(.maplibregl-ctrl-group button + button) {
-    border-top-color: rgba(0, 255, 136, 0.2);
+    border-top-color: rgba(255, 255, 255, 0.15);
   }
 
   .overlay {
