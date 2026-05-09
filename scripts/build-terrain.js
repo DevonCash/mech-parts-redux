@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
+import { availableParallelism } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
@@ -122,7 +123,7 @@ function main() {
     "--format", "png",
     "--min-z", String(MIN_ZOOM),
     "--max-z", String(MAX_ZOOM),
-    "-j", "4",
+    "-j", String(availableParallelism()),
     `"${shiftedVrtPath}"`,
     `"${mbtilesPath}"`,
   ].join(" "), {
