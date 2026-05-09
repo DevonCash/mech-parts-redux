@@ -103,27 +103,25 @@ This is more robust than the current approach in `game.ts` (which multiplies rea
 
 ---
 
-## Map Rendering: MapLibre GL JS + PMTiles Globe
+## Map Rendering: MapLibre GL JS Globe
 
-**What:** MapLibre GL JS with globe projection, contour data served as PMTiles vector tiles.
-**Why:** WebGL-accelerated rendering with native vector tile support. Globe projection renders Mars as a rotatable sphere — no flat-map distortion. PMTiles serves pre-computed contour geometry as a single static file with HTTP range requests, so only visible tiles are loaded at any zoom level.
-**Packages:** `maplibre-gl`, `pmtiles`
+**What:** MapLibre GL JS with globe projection, contour data served as GeoJSON.
+**Why:** WebGL-accelerated rendering. Globe projection renders Mars as a rotatable sphere — no flat-map distortion. Contour geometry is pre-computed at build time so the browser does zero marching-squares work at runtime.
+**Package:** `maplibre-gl`
 
 Architecture:
 - MapLibre renders Mars as a globe with `projection: { type: "globe" }`
-- Contour lines are pre-computed at build time from MOLA data (marching squares → traced polylines → GeoJSON → vector tiles → PMTiles)
+- Contour lines are pre-computed at build time from MOLA data (marching squares → traced polylines → GeoJSON)
 - Three contour tiers with zoom-dependent visibility: major (2000m, always visible), mid (1000m, zoom 2+), minor (500m, zoom 4+)
 - H3 hex overlays, unit markers, routes, etc. layer on top as MapLibre sources/layers
 - Zoom levels naturally map to H3 resolution levels
-- Same contour data serves both strategic (whole-planet) and tactical (local area) views — the tile pyramid handles LOD automatically
 
 Build pipeline (`npm run build:contours`):
 ```
 MOLA binary → marching squares → trace polylines → GeoJSON
-  → geojson-vt (slice tiles) → vt-pbf (encode) → PMTiles (pack)
 ```
 
-Build-time dependencies: `geojson-vt`, `vt-pbf` (devDependencies only — not shipped to browser).
+**Evolution path:** If the GeoJSON file size becomes a problem (loading the full planet at once), graduate to PMTiles vector tiles — the preprocessing is the same, just add a tiling + encoding step at the end. This will matter more once we have higher-resolution tactical data.
 
 ---
 
