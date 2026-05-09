@@ -13,7 +13,7 @@
  * Output: public/data/mars-terrain.pmtiles
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
@@ -147,8 +147,8 @@ function main() {
     try { unlinkSync(f); } catch { /* ignore */ }
   }
 
-  const sizeMB = (readFileSync(pmtilesPath).byteLength / 1e6).toFixed(1);
-  console.log(`\nDone. Terrain tiles: ${pmtilesPath} (${sizeMB} MB)`);
+  const { size } = statSync(pmtilesPath);
+  console.log(`\nDone. Terrain tiles: ${pmtilesPath} (${(size / 1e6).toFixed(1)} MB)`);
 }
 
 main();
