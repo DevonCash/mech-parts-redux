@@ -1,0 +1,41 @@
+@import "./reset.css";
+
+html,
+body {
+  font-family: monospace;
+}
+
+button {
+  background: white;
+  border: 2px solid black;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1ch;
+  cursor: pointer;
+}
+
+button.active, button:hover {
+  background: black;
+  color: white;
+}
+
+menu > button + button {
+  border-left: none;
+}
+
+menu {
+  display: flex;
+  padding: 0;
+  list-style: none;
+
+  &:has(> li) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .5ch;
+  }
+
+  li > button {
+    width: 100%;
+  }
+}
