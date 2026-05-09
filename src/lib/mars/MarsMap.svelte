@@ -43,6 +43,19 @@
             type: "background",
             paint: { "background-color": "#0a0a0a" },
           },
+          // Hillshade from terrain DEM
+          {
+            id: "hillshade",
+            type: "hillshade",
+            source: "terrain",
+            paint: {
+              "hillshade-illumination-direction": 315,
+              "hillshade-exaggeration": 0.5,
+              "hillshade-shadow-color": "#000000",
+              "hillshade-highlight-color": "#ffffff",
+              "hillshade-accent-color": "#000000",
+            },
+          },
           // Minor contours (500m) — higher zoom only
           {
             id: "contour-minor",
