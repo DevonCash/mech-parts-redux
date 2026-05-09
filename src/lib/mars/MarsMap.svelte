@@ -28,13 +28,12 @@
       zoom: 1.5,
       minZoom: 0,
       maxZoom: 6,
-      projection: { type: "globe" },
       renderWorldCopies: false,
       attributionControl: false,
     });
 
     map.on("style.load", async () => {
-      // Disable Earth-tinted atmosphere
+      map.setProjection({ type: "globe" });
       map.setSky({});
 
       try {
