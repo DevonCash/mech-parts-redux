@@ -107,7 +107,7 @@ async function downloadTile(url, expectedBytes) {
   return combined;
 }
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 16;
 
 /**
  * Stitch a downloaded tile into the full elevation grid.
