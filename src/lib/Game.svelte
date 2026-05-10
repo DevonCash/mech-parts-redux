@@ -19,6 +19,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if gameState}
+<div class="game-shell">
   <header>
     <PauseMenu {game} />
     <div class="resources">
@@ -48,9 +49,22 @@
   <main class="map-viewport">
     <MarsMap />
   </main>
+</div>
 {/if}
 
 <style>
+  :global(html), :global(body), :global(#app) {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .game-shell {
+    height: 100dvh;
+    position: relative;
+  }
+
   .resources {
     display: flex;
     gap: 3px;
@@ -104,13 +118,13 @@
     justify-content: space-between;
     padding: 0.5rem;
     position: relative;
-    z-index: 10;
+    z-index: 1;
   }
 
   .map-viewport {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
   }
 
   dialog {
