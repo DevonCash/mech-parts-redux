@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { parseCommandId, commandMeta } from "../commands";
+  import { parseCommandId, commandMeta } from "../../commands";
 
   let {
     symbol,

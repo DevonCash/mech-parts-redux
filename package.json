@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "test": "vitest",
     "build:data": "node --max-old-space-size=8192 scripts/build-data.js"
   },
   "devDependencies": {
@@ -17,7 +18,8 @@
     "svelte": "^5.55.4",
     "svelte-check": "^4.4.6",
     "typescript": "~6.0.2",
-    "vite": "^8.0.9"
+    "vite": "^8.0.9",
+    "vitest": "^3.2.1"
   },
   "dependencies": {
     "@acalcutt/maplibre-contour-pmtiles": "^0.1.2",

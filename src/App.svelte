@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { createGame } from "./lib/game";
-  import Game from "./lib/Game.svelte";
-  import MainMenu from "./lib/MainMenu.svelte";
+  import Game from "./Game.svelte";
+  import MainMenu from "./ui/menu/MainMenu.svelte";
 
-  let game = $state();
+  let playing = $state(false);
 </script>
 
-{#if game}
-  <Game {game} />
+{#if playing}
+  <Game />
 {:else}
-  <MainMenu startGame={(id: string) => (game = createGame(id))} />
+  <MainMenu startGame={() => (playing = true)} />
 {/if}

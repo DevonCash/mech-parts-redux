@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { registerCommands } from "../commands";
-  import Button from "./Button.svelte";
-  let { game } = $props();
+  import { registerCommands } from "../../commands";
+  import Button from "../shared/Button.svelte";
+  import { timeScale } from "../../stores/time";
 </script>
 
 <button command="--toggle" commandfor="pause-menu">☰</button>
@@ -11,16 +11,16 @@
     "--toggle": (e) => {
       const dialog = e.target as HTMLDialogElement;
       if (dialog.open) {
-        game.setGameSpeed(1);
+        timeScale.set(1);
         dialog.close();
       } else {
-        game.setGameSpeed(0);
+        timeScale.set(0);
         setTimeout(() => dialog.showModal(), 0);
       }
     },
     "--resume": (e) => {
       const dialog = e.target as HTMLDialogElement;
-      game.setGameSpeed(1);
+      timeScale.set(1);
       dialog.close();
     },
   })}

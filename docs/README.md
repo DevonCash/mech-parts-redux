@@ -4,6 +4,7 @@
 
 - **concept.md** — Premise, core loop, design principles
 - **technical.md** — Foundational tech decisions
+- **roadmap.md** — Development milestones and build order
 
 ## Combat
 

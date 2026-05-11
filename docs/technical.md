@@ -141,6 +141,59 @@ Define a mech chassis schema once → get the TypeScript type for free → valid
 
 ---
 
+## Project Structure
+
+Domain-organized, with a shared simulation core that's environment-agnostic (no DOM, no Svelte, runnable in workers or main thread).
+
+```
+src/
+  main.ts                       # Vite entry point
+  App.svelte                    # Root component
+  Game.svelte                   # Wires stores to UI, starts the loop
+  keybinds.ts
+  commands.ts
+
+  sim/                          # Simulation core (pure TypeScript, no DOM)
+    types.ts                    # Shared type definitions
+    tick.ts                     # Fixed timestep loop
+    constants.ts                # Mars radius, H3 scaling, conversions
+    h3/                         # H3 utilities, pathfinding
+    economy/                    # Node, route, commodity, quanta simulation
+    combat/                     # Unit model, damage, pilot AI, orders
+    world/                      # Factions, weather, comms, director
+    crawler/                    # Crawler state, movement, construction
+
+  workers/                      # Thin entry points for web workers
+    economy-worker.ts           # Imports sim/economy, handles messages
+    combat-worker.ts            # Future
+
+  stores/                       # Nanostores — bridge between sim and UI
+    time.ts                     # gameTime, tick, timeScale
+    crawler.ts                  # Position, route, destination, inventory
+    world.ts                    # Nodes, routes, factions (from snapshots)
+    selection.ts                # Selected hex/node/unit
+    contracts.ts                # Available and active contracts
+
+  ui/                           # Svelte components (presentation only)
+    hud/                        # Header, time controls, alert feed
+    panels/                     # Node info, contracts, company management
+    map/                        # MapLibre map, H3 layer, marker layers
+    menu/                       # Main menu, pause menu
+    shared/                     # Button, Panel, theme.css
+```
+
+**Key boundaries:**
+
+- `sim/` imports nothing from `ui/`, `stores/`, or `workers/`. All game logic lives here. Testable without a DOM.
+- `workers/` are thin wrappers — import from `sim/`, set up message passing.
+- `stores/` is the only shared mutable state between simulation and rendering. The game loop writes to stores; Svelte components read from them.
+- `ui/` reads from stores, never imports from `sim/` directly.
+- Domain folders inside `sim/` mirror the design docs: `sim/economy/` ↔ `docs/world/economy.md`, `sim/combat/` ↔ `docs/combat/`.
+
+Folders are created as needed per milestone, not all at once.
+
+---
+
 ## Not Yet Decided
 
 - **Pathfinding** — A* over the H3 graph is the obvious choice, but we may want hierarchical pathfinding (HPA*) for strategic-scale routes across the whole planet. Decide once we know how crawler movement feels.
