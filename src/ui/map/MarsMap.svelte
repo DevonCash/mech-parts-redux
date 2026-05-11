@@ -11,6 +11,7 @@
   let error = $state<string | null>(null);
   let geologyVisible = $state(false);
 
+
   // Geology resource categories (debug overlay)
   const geologyCategories = [
     {
@@ -120,7 +121,7 @@
             type: "raster",
             source: "terrain-shader",
             paint: {
-              "raster-opacity": 1,
+              "raster-opacity": 0,
             },
           },
           // Contour lines — major (2000m), visible from zoom 0

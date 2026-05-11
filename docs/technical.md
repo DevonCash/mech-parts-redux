@@ -113,7 +113,7 @@ Architecture:
 - MapLibre renders Mars as a globe with `projection: { type: "globe" }`
 - Contour lines are pre-computed at build time from MOLA data (marching squares → traced polylines → GeoJSON)
 - Three contour tiers with zoom-dependent visibility: major (2000m, always visible), mid (1000m, zoom 2+), minor (500m, zoom 4+)
-- H3 hex overlays, unit markers, routes, etc. layer on top as MapLibre sources/layers
+- Unit markers, routes, etc. layer on top as MapLibre sources/layers
 - Zoom levels naturally map to H3 resolution levels
 
 Build pipeline (`npm run build:contours`):
@@ -171,13 +171,13 @@ src/
     time.ts                     # gameTime, tick, timeScale
     crawler.ts                  # Position, route, destination, inventory
     world.ts                    # Nodes, routes, factions (from snapshots)
-    selection.ts                # Selected hex/node/unit
+    selection.ts                # Selected node/unit
     contracts.ts                # Available and active contracts
 
   ui/                           # Svelte components (presentation only)
     hud/                        # Header, time controls, alert feed
     panels/                     # Node info, contracts, company management
-    map/                        # MapLibre map, H3 layer, marker layers
+    map/                        # MapLibre map, marker layers
     menu/                       # Main menu, pause menu
     shared/                     # Button, Panel, theme.css
 ```

@@ -3,6 +3,7 @@
   import GameTime from "./ui/hud/GameTime.svelte";
   import PauseMenu from "./ui/menu/PauseMenu.svelte";
   import MarsMap from "./ui/map/MarsMap.svelte";
+
   import { handleKeydown } from "./keybinds";
   import { createStepper, TICK_DURATION_MS } from "./sim/tick";
   import { gameTime, tick, timeScale, alpha } from "./stores/time";

@@ -39,7 +39,7 @@ Replace the single `atom` with domain-specific nanostores.
 - Create `src/stores/time.ts` — gameTime (derived from tick count), tick counter, timeScale
 - Create `src/stores/crawler.ts` — position (lat/lng), currentNode (if docked), currentRoute (if moving), routeProgress (0–1), destination, inventory (stub)
 - Create `src/stores/world.ts` — nodes, routes (starts empty, populated in Epic 3)
-- Create `src/stores/selection.ts` — currently selected hex, node, or entity
+- Create `src/stores/selection.ts` — currently selected node or entity
 - Keep localStorage persistence via `@nanostores/persistent` on each store
 - Update `src/Game.svelte` and UI components to read from the new stores
 - Delete the old `src/lib/game.ts`
@@ -63,31 +63,16 @@ Move existing Svelte components into the `src/ui/` structure.
 
 ---
 
-## Epic 2: H3 Integration
+## Epic 2: H3 Backend Integration
 
-Get the hex grid rendering on the map and responding to interaction. This is the spatial backbone for everything else.
+Set up H3 as the backend spatial index for pathfinding and area queries. H3 is not a player-facing UI element — players interact with the map via lat/lng coordinates, and the backend resolves positions to H3 cells internally.
 
-### 2.1 H3 hex rendering on MapLibre
-
-Render H3 hexagons as a MapLibre layer over the terrain.
+### 2.1 H3 utility layer
 
 - Add `h3-js` to dependencies
-- Create `src/sim/h3/index.ts` — H3 utility functions: `cellsInViewport(bounds, zoom)` returns H3 cell IDs at the appropriate resolution for the given map bounds. Resolution selection: res 4 at strategic zoom (0–4), res 5 at regional (4–6), res 6 at tactical (6+).
-- Create `src/ui/map/h3-layer.ts` — takes cell IDs from `sim/h3`, converts to GeoJSON polygons, manages a MapLibre source/layer
-- Add the hex layer to MarsMap.svelte as a line layer (hex outlines only, transparent fill)
-- Style: faint grid lines in the wireframe aesthetic (thin, low-opacity white or green)
-- Recalculate visible hexes on map move/zoom (debounced)
+- Create `src/sim/h3/index.ts` — H3 utility functions: `zoomToResolution(zoom)` maps zoom levels to H3 resolutions, `cellsInViewport(bounds, zoom)` returns H3 cell IDs for spatial queries, `cellBoundaryToGeoJSON(cell)` for debug/diagnostic use
 - **Test:** `src/sim/h3/index.test.ts` — `cellsInViewport` returns expected cell count for a known bounding box. Resolution selection returns correct res for each zoom range.
-- **Verify:** Hex grid visible on the map, resolution changes with zoom, no visual lag during pan
-
-### 2.2 Hex interaction
-
-Click and hover on hexes.
-
-- On hover: highlight the hex under the cursor (brighter outline or faint fill)
-- On click: select a hex (update `src/stores/selection.ts`), display its H3 index and center coordinates in a small info panel
-- The info panel is a `src/ui/panels/HexInfo.svelte` component reading from the selection store
-- **Verify:** Hover highlights hex, click shows info panel with H3 index and coordinates
+- **Verify:** Utility functions work correctly, no UI rendering involved
 
 ---
 
@@ -242,14 +227,14 @@ Quick navigation to important locations.
 - Optional "follow" mode while crawler is moving: camera tracks the crawler marker
 - **Verify:** Double-click a distant node, camera smoothly flies to it. Press Home, camera returns to crawler.
 
-### 6.2 Zoom-to-resolution mapping
+### 6.2 Zoom-to-detail mapping
 
 As you zoom in, the map transitions from strategic to regional to tactical feel.
 
-- At low zoom (0–3): major contours, region names, hex grid at res 4, nodes as dots
-- At mid zoom (4–6): mid contours, feature names, hex grid at res 5, nodes as labeled markers, routes visible
-- At high zoom (7+): minor contours, crater names, hex grid at res 6+, detailed node rendering
-- Mostly tuning existing layers' min/maxzoom and label density, plus the H3 layer from Epic 2
+- At low zoom (0–3): major contours, region names, nodes as dots
+- At mid zoom (4–6): mid contours, feature names, nodes as labeled markers, routes visible
+- At high zoom (7+): minor contours, crater names, detailed node rendering
+- Mostly tuning existing layers' min/maxzoom and label density
 - **Verify:** Zooming in and out feels like a smooth transition between strategic overview and regional detail
 
 ---
@@ -258,7 +243,7 @@ As you zoom in, the map transitions from strategic to regional to tactical feel.
 
 ```
 Epic 1 (game loop, state, vitest, file reorg)
-  ├──▶ Epic 2 (H3 integration)
+  ├──▶ Epic 2 (H3 backend utilities)
   │      └──▶ Epic 3 (nodes & routes)
   │             └──▶ Epic 4 (crawler movement)
   │                    └──▶ Epic 5 (time, docking, HUD)
@@ -275,7 +260,7 @@ Epic 6 can be done at any point after Epic 1. Everything else is sequential.
 ### Per-epic acceptance
 
 - **Epic 1:** Game starts, time flows at variable speeds, state persists across reload, `pnpm test` passes, files organized per `technical.md` structure
-- **Epic 2:** Hex grid visible on the map at appropriate resolutions, clicking a hex shows its H3 index
+- **Epic 2:** H3 utility functions return correct cells for viewport queries and resolution selection
 - **Epic 3:** 10+ nodes visible at real Mars locations, connected by route lines, clicking a node shows info
 - **Epic 4:** Crawler moves along routes between nodes in real time, speed changes with time scale, multi-hop pathfinding works
 - **Epic 5:** Time displayed as Mars sols, speed controls cover 0x–100x, docked UI shows settlement info, HUD looks like a command terminal
@@ -285,7 +270,7 @@ Epic 6 can be done at any point after Epic 1. Everything else is sequential.
 
 **Test 1 — The road trip.** Start a new game. Crawler is at a settlement. Speed up to 10x. Click a node three hops away. Watch the crawler move along the route, passing through intermediate nodes, arriving at the destination. Slow to 1x. The time display shows sols have passed. Click the settlement — see its info panel with docked actions.
 
-**Test 2 — The overview.** Zoom all the way out to see the whole planet. Hex grid shows res-4 cells. Nodes are dots with region labels. Zoom in on Valles Marineris. Hex grid transitions to res-5, then res-6. Contour lines become more detailed. Route lines appear between nearby nodes. Nomenclature labels shift from regions to features to craters. The crawler is visible as a distinct marker.
+**Test 2 — The overview.** Zoom all the way out to see the whole planet. Nodes are dots with region labels. Zoom in on Valles Marineris. Contour lines become more detailed. Route lines appear between nearby nodes. Nomenclature labels shift from regions to features to craters. The crawler is visible as a distinct marker.
 
 ### Automated test coverage
 

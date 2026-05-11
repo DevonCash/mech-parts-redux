@@ -12,7 +12,7 @@ Solo side project, ~10–15 hours/week. Milestones are layered — each one buil
 
 **What's needed:**
 
-- H3 overlay and interaction (hex grid visible on the map, click/hover on cells)
+- H3 backend spatial index (pathfinding, area queries — not a visible UI layer)
 - Node data model and placement — a handful of test nodes on the map (settlements, extraction sites, depots) with basic info display
 - Route generation between nodes — pathfind along low-elevation corridors, render as lines on the map
 - Crawler entity — position on the map, movement along routes, arrival at nodes
