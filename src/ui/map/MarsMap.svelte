@@ -6,11 +6,13 @@
   import { createTerrainShaderProtocol } from "./terrain-shader";
   import { addRouteLayer } from "./route-layer";
   import { addNodeLayer } from "./node-layer";
+  import { addCrawlerLayer } from "./crawler-layer";
 
   let mapContainer: HTMLDivElement;
   let map: maplibregl.Map;
   let cleanupRoutes: (() => void) | undefined;
   let cleanupNodes: (() => void) | undefined;
+  let cleanupCrawler: (() => void) | undefined;
   let loading = $state(true);
   let error = $state<string | null>(null);
   let geologyVisible = $state(false);
@@ -368,9 +370,10 @@
         console.warn("Geology data not available:", e);
       }
 
-      // Routes first (render below nodes), then node markers
+      // Routes first (render below nodes), then node markers, then crawler on top
       cleanupRoutes = addRouteLayer(map);
       cleanupNodes = addNodeLayer(map);
+      cleanupCrawler = addCrawlerLayer(map);
 
       loading = false;
     });
@@ -383,6 +386,7 @@
     });
 
     return () => {
+      cleanupCrawler?.();
       cleanupNodes?.();
       cleanupRoutes?.();
       map.remove();

@@ -8,6 +8,9 @@
   import { handleKeydown } from "./keybinds";
   import { createStepper, TICK_DURATION_MS } from "./sim/tick";
   import { gameTime, tick, timeScale, alpha } from "./stores/time";
+  import { crawler } from "./stores/crawler";
+  import { routes } from "./stores/world";
+  import { advanceCrawler } from "./sim/crawler/movement";
 
   const stepper = createStepper();
   let rafId: number;
@@ -29,8 +32,13 @@
         tick.set(currentTick + result.ticks);
         gameTime.set(currentGameTime + result.ticks * TICK_DURATION_MS);
 
-        // Future: run simulation ticks here
-        // for (let i = 0; i < result.ticks; i++) { simulate(); }
+        // Run simulation ticks
+        const currentRoutes = routes.get();
+        let crawlerState = crawler.get();
+        for (let i = 0; i < result.ticks; i++) {
+          crawlerState = advanceCrawler(crawlerState, currentRoutes);
+        }
+        crawler.set(crawlerState);
       }
 
       alpha.set(result.alpha);

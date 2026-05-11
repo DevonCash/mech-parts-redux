@@ -13,15 +13,21 @@ export interface CrawlerState {
   routeProgress: number
   /** Destination node ID, null if none */
   destination: string | null
+  /** Is the current route being traversed in reverse? */
+  routeReversed: boolean
+  /** Queued route segments for multi-hop travel: [routeId, reversed] pairs */
+  routeQueue: [string, boolean][]
 }
 
 const defaultCrawler: CrawlerState = {
-  lat: -4.5, // Near Valles Marineris
-  lng: -137.4,
-  currentNode: null,
+  lat: -12.0,
+  lng: -70.0,
+  currentNode: 'valles-hub',
   currentRoute: null,
   routeProgress: 0,
   destination: null,
+  routeReversed: false,
+  routeQueue: [],
 }
 
 export const crawler = persistentAtom<CrawlerState>('mech:crawler', defaultCrawler, {

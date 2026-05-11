@@ -1,20 +1,71 @@
 <script lang="ts">
   import { selection, clearSelection } from "../../stores/selection";
-  import { nodes } from "../../stores/world";
+  import { nodes, routes } from "../../stores/world";
+  import { crawler } from "../../stores/crawler";
+  import { travelTo, cancelTravel } from "../../stores/travel";
+  import { CRAWLER_SPEED_KM_S } from "../../sim/crawler/movement";
   import type { GameNode } from "../../sim/economy/models";
 
   let currentSelection = $state(selection.get());
   let nodeMap = $state(nodes.get());
+  let routeMap = $state(routes.get());
+  let crawlerState = $state(crawler.get());
 
   $effect(() => {
-    const unsubSel = selection.subscribe((v) => (currentSelection = v));
-    const unsubNodes = nodes.subscribe((v) => (nodeMap = v));
-    return () => { unsubSel(); unsubNodes(); };
+    const unsubs = [
+      selection.subscribe((v) => (currentSelection = v)),
+      nodes.subscribe((v) => (nodeMap = v)),
+      routes.subscribe((v) => (routeMap = v)),
+      crawler.subscribe((v) => (crawlerState = v)),
+    ];
+    return () => unsubs.forEach(u => u());
   });
 
   let node: GameNode | null = $derived(
     currentSelection?.kind === "node" ? nodeMap[currentSelection.id] ?? null : null
   );
+
+  // Is the crawler docked at this node?
+  let isDockedHere = $derived(
+    node !== null && crawlerState.currentNode === node.id
+  );
+
+  // Is the crawler docked somewhere and can we reach this node?
+  let canTravel = $derived(() => {
+    if (!node || !crawlerState.currentNode) return false;
+    if (crawlerState.currentNode === node.id) return false;
+    // Any node is potentially reachable — travelTo handles pathfinding
+    return true;
+  });
+
+  // Is the crawler currently traveling?
+  let isTraveling = $derived(crawlerState.currentRoute !== null);
+
+  // Is this the destination?
+  let isDestination = $derived(
+    node !== null && crawlerState.destination === node.id
+  );
+
+  // ETA calculation
+  let etaDisplay = $derived(() => {
+    if (!crawlerState.currentRoute || !crawlerState.destination) return null;
+    const route = routeMap[crawlerState.currentRoute];
+    if (!route) return null;
+
+    const remainingProgress = 1 - crawlerState.routeProgress;
+    const remainingKm = route.distance * route.terrain * remainingProgress;
+    // Add remaining queued routes
+    let totalKm = remainingKm;
+    for (const routeId of crawlerState.routeQueue) {
+      const r = routeMap[routeId];
+      if (r) totalKm += r.distance * r.terrain;
+    }
+
+    const seconds = totalKm / CRAWLER_SPEED_KM_S;
+    if (seconds < 60) return `${Math.ceil(seconds)}s`;
+    if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+    return `${(seconds / 3600).toFixed(1)}h`;
+  });
 
   const typeLabels: Record<string, string> = {
     extraction: "EXTRACTION",
@@ -28,6 +79,10 @@
     const ns = lat >= 0 ? "N" : "S";
     const ew = lng >= 0 ? "E" : "W";
     return `${Math.abs(lat).toFixed(2)}°${ns}  ${Math.abs(lng).toFixed(2)}°${ew}`;
+  }
+
+  function handleTravel() {
+    if (node) travelTo(node.id);
   }
 </script>
 
@@ -60,6 +115,24 @@
       <dt>INV</dt>
       <dd class="stub">NO DATA</dd>
     </dl>
+
+    {#if isDockedHere}
+      <div class="status docked">DOCKED</div>
+    {/if}
+
+    {#if isDestination && isTraveling}
+      <div class="travel-status">
+        <span class="status traveling">EN ROUTE</span>
+        {#if etaDisplay()}
+          <span class="eta">ETA {etaDisplay()}</span>
+        {/if}
+      </div>
+      <button class="action cancel" onclick={cancelTravel}>CANCEL</button>
+    {/if}
+
+    {#if canTravel() && !isTraveling}
+      <button class="action travel" onclick={handleTravel}>TRAVEL</button>
+    {/if}
   </div>
 {/if}
 
@@ -149,5 +222,62 @@
 
   .stub {
     opacity: 0.25;
+  }
+
+  .status {
+    padding: 4px 8px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .docked {
+    color: #00ff88;
+  }
+
+  .travel-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .traveling {
+    color: #d0c040;
+    border: none;
+  }
+
+  .eta {
+    padding: 4px 8px;
+    font-size: 10px;
+    opacity: 0.6;
+  }
+
+  .action {
+    display: block;
+    width: 100%;
+    padding: 6px 8px;
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    border: none;
+    cursor: pointer;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .travel {
+    background: rgba(0, 255, 136, 0.15);
+    color: #00ff88;
+  }
+  .travel:hover {
+    background: rgba(0, 255, 136, 0.25);
+  }
+
+  .cancel {
+    background: rgba(255, 80, 80, 0.15);
+    color: #ff5050;
+  }
+  .cancel:hover {
+    background: rgba(255, 80, 80, 0.25);
   }
 </style>
