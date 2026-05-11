@@ -296,3 +296,34 @@ Mechs connect to the commodity model:
 - **Repair** also restocks expendable weapons (missiles, drones) — these aren't field-reloadable, they're replenished during maintenance.
 
 The two-tier economy tension applies directly: crude metal keeps your mechs running, precision components keep them competitive. A company that burns through its precision stock on mech repairs has fewer to trade or sell, and eventually fields a force of patched-together machines that run hot and hit soft.
+
+---
+
+## Active armor (reactive charges)
+
+A component with `charges` that triggers on incoming hits. When a hit lands on the location where active armor is mounted, it expends a charge to reduce damage before the normal hardness/HP resolution. This is just another component in the ordered stack — mount it outermost at a location, and it intercepts hits before passive armor does.
+
+The Arena/Trophy-inspired version orients a shaped charge at incoming projectiles. In game terms: the component has charges, a success probability per hit, and a damage reduction value when it fires. Charges are restocked on repair like other expendable systems.
+
+```typescript
+{
+  type: 'armor',
+  charges: 6,
+  activeInterceptChance: 0.7,   // probability of intercepting per hit
+  activeDamageReduction: 40,    // flat damage absorbed when it fires
+}
+```
+
+Fires automatically. No player micro. Loadout decision: active armor trades weight and slots for burst protection against heavy weapons, but once charges are spent you're down to passive plate. Useless against sustained small-arms fire (wastes charges on low-damage hits), strong against missile salvos and heavy cannon shots.
+
+---
+
+## Crawler as unit
+
+A crawler is a tracked/wheeled chassis with locations for cargo bays, workshops, crew quarters, reactors, and defensive weapons. Same damage model, same component stack. A crawler that takes engine damage slows down. One that loses its workshop can't do field repairs. Destruction means losing everything aboard — including the player's server core (see ../characters/player.md).
+
+---
+
+## Universal unit model
+
+Every entity in the game uses this same model. A mech is a biped chassis with a cockpit, weapons, and actuators. A tank is a tracked chassis with a turret. A drone is a lightweight chassis with a drone core instead of a cockpit — destroy it and the drone goes offline, no one dies. A person is a chassis with organic locations (head, torso, limbs), no armor, and low maxHP. A rifle is a weapon component on an arm. Body armor is a high-hardness component mounted outermost on the torso. A building is a chassis with structural locations (walls, floors, roof) and components for power, comms, doors, defenses, and whatever infrastructure it houses — a factory's fabrication line is a component, a settlement's comm relay is a component. The damage model, budgets, traverse, and profiles are identical across all of them.

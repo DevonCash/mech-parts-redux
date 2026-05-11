@@ -8,11 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "build:contours": "node --max-old-space-size=8192 scripts/build-contours.js && tippecanoe -P -o public/data/mars-contours.pmtiles --no-feature-limit --no-tile-size-limit --minimum-zoom=0 --maximum-zoom=10 -l contours --simplification=4 --force public/data/mars-contours.ndjson",
-    "build:terrain": "node scripts/build-terrain.js",
-    "fetch:nomenclature": "node scripts/fetch-nomenclature.js",
-    "fetch:geology": "node scripts/fetch-geology.js",
-    "build:geology": "tippecanoe -o public/data/mars-geology.pmtiles --no-feature-limit --no-tile-size-limit --minimum-zoom=0 --maximum-zoom=8 -l geology --simplification=4 --detect-shared-borders --force public/data/mars-geology.json"
+    "build:data": "node --max-old-space-size=8192 scripts/build-data.js"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",

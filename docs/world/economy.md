@@ -232,6 +232,8 @@ interface Route {
   distance: number;                 // derived from path length + terrain
   terrain: number;                  // 0–1 difficulty, derived from elevation profile
   danger: number;                   // computed each tick from raider activity
+  condition: number;                // 0–1, physical infrastructure health
+  conditionDecayRate: number;       // condition lost per tick from traffic + weather
 }
 ```
 
@@ -243,6 +245,30 @@ Routes store their geometry because the path is the input to computing distance 
 These values are baked in at generation time — terrain doesn't change. Danger is recomputed each tick from raider quanta activity along the route. Higher danger means haulers demand more pay, prices rise at the destination, and settlements at the end of dangerous routes suffer.
 
 The path is also used for rendering convoys on the map and determining which routes are affected by regional events (dust storms, raider hotspots).
+
+### Route condition and infrastructure decay
+
+Routes have physical infrastructure — graded roads, bridges over canyons, tunnels through ridges, hardened landing pads at depots. This infrastructure degrades over time.
+
+**Decay sources:**
+- **Traffic wear** — higher traffic volume increases decay. A busy trade route degrades faster than a backwater path.
+- **Weather** — dust storms bury roads, seasonal flooding damages bridges in lowlands, thermal cycling cracks hardened surfaces. Severe weather events cause sharp condition drops.
+- **Neglect** — a route with no maintenance decays at a background rate even without traffic or weather damage.
+
+**Condition effects:**
+- **Travel speed** — low-condition routes are slower. Buried roads, damaged bridges, and collapsed tunnel sections force detours and careful navigation.
+- **Vehicle wear** — traversing a degraded route wears on mech and vehicle components faster. A rough road costs you maintenance that a good road doesn't.
+- **Fuel cost** — worse roads burn more fuel per kilometer.
+- **Danger amplification** — degraded routes are harder to defend. Damaged infrastructure creates ambush opportunities. Route danger compounds with poor condition.
+
+**Maintenance:**
+Factions allocate quanta with the `maintenance` job to repair routes they care about. A faction that controls both endpoints of a trade route has incentive to maintain it. Routes connecting rival factions' territory tend to decay — nobody wants to maintain a road that benefits the enemy.
+
+The player can take maintenance escort contracts — a faction sends an engineering crew to repair a route, and you escort them. The crew does the labor; you provide security. These are low-glamour, steady-pay contracts that keep trade flowing.
+
+**Cascading failure:** A route that drops below ~0.2 condition is effectively impassable for heavy vehicles (crawlers, supply convoys). If it's the only link between two nodes, the destination node starts starving. This creates urgent repair contracts and rewards players who keep an eye on infrastructure health in their operating region.
+
+Impassable routes don't disappear — they can be restored with significant maintenance effort. But the longer they sit, the more expensive restoration becomes.
 
 ---
 
@@ -391,23 +417,17 @@ Resolution TBD during implementation. Likely two tiers: coarse (res 3–4, ~100�
 
 ---
 
-## What this answers from the concept doc
+## Resolved
 
-- **What are the major factions?** — Three orientations (preservationist, corporate, separatist) whose behavior emerges from economic incentives rather than scripts.
-- **What does a "contract" contain?** — Objective, commodity, source/destination nodes, pay, danger level, faction source, reputation implications. Generated from simulation state.
-- **How does the crawler's capacity constrain your roster?** — Deferred, but the economy gives context: your crawler consumes fuel and needs maintenance like any other node. Your carrying capacity for trade goods and salvage is a strategic constraint.
-
-## Deferred
-
-- **Specific faction definitions** — names, lore, starting positions. The economic model defines their behavioral archetypes; flavor is layered on top.
-- **Mech economy integration** — how mech parts map to the commodity model. Likely: mechs consume metal (crude repairs) and precision components (proper repairs). Salvaged mech parts are a form of precision component.
-- **Map placement** — where specific nodes go on Mars. Extraction sites near real geological features (Olympus Mons mining, polar ice extraction, Valles Marineris salvage sites).
-- **Balancing** — commodity ratios, decay rates, price elasticity, quantum population counts. All require playtesting.
-- ~~**Crawler as a node**~~ — **Resolved: yes.** Crawlers are mobile nodes. The player's crawler has inventory, workforce (pilots/crew), infrastructure (workshop, medbay), and faction influence like any other node. NPC mercenary companies and rival players are also crawler nodes, participating in the economy identically — competing for labor, parts, and contracts at whatever settlement they're docked at.
-- **Ink narrative integration** — how story events interact with the economy. Ink scripts could trigger economic events (embargo, blockade, discovery) and read economic state (faction influence, commodity prices) as variables.
+- **Major factions:** Three behavioral orientations (preservationist, corporate, separatist) whose behavior emerges from economic incentives. Specific identities and starting positions in `factions.md`.
+- **Contracts:** Full player-facing contract system designed. See `contracts.md`.
+- **Crawler as a node:** Crawlers are mobile nodes with inventory, workforce, infrastructure, and faction influence. NPC mercenary companies are also crawler nodes.
+- **Mech economy integration:** Resolved in `../combat/mechs.md`. Crude repairs consume metal, precision repairs consume precision components, ammo is a universal commodity.
+- **Legacy resource transition:** Not an unlock — economic feasibility. See `technology.md`.
+- **Setting:** Partially terraformed, breathable in lowlands, liquid water. See `weather.md`.
+- **Node investment:** No direct investment. The player influences nodes through faction relationships, material deliveries, or military action.
 
 ## Open questions
 
-- How many quanta does the simulation need to feel alive? Hundreds? Low thousands?
-- How visible should the economy be to the player? Answered in part by the information gap design — the player sees filtered, stale, and potentially deceptive intel rather than ground truth. Specific UI for this TBD.
-- Should the player be able to invest in nodes (fund repairs, upgrade infrastructure) for long-term returns?
+- Where do specific nodes go on Mars? Extraction sites near real geological features (Olympus Mons mining, polar ice extraction, Valles Marineris salvage sites). Placement TBD.
+- Balancing: commodity ratios, decay rates, price elasticity, quantum population counts. All require playtesting.
