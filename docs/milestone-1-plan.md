@@ -6,7 +6,7 @@ File paths follow the project structure defined in `technical.md`: simulation lo
 
 ---
 
-## Epic 1: Foundation — Game Loop, State, and Test Infrastructure
+## Epic 1: Foundation — Game Loop, State, and Test Infrastructure ✅
 
 The current `game.ts` uses real-time deltas multiplied by a time scale. The design spec calls for a fixed timestep with variable rendering. This epic replaces the game loop, splits state into domain stores, and sets up Vitest.
 
@@ -63,7 +63,7 @@ Move existing Svelte components into the `src/ui/` structure.
 
 ---
 
-## Epic 2: H3 Backend Integration
+## Epic 2: H3 Backend Integration ✅
 
 Set up H3 as the backend spatial index for pathfinding and area queries. H3 is not a player-facing UI element — players interact with the map via lat/lng coordinates, and the backend resolves positions to H3 cells internally.
 

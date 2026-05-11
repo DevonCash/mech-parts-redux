@@ -4,9 +4,13 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import { Protocol } from "pmtiles";
   import { createTerrainShaderProtocol } from "./terrain-shader";
+  import { addRouteLayer } from "./route-layer";
+  import { addNodeLayer } from "./node-layer";
 
   let mapContainer: HTMLDivElement;
   let map: maplibregl.Map;
+  let cleanupRoutes: (() => void) | undefined;
+  let cleanupNodes: (() => void) | undefined;
   let loading = $state(true);
   let error = $state<string | null>(null);
   let geologyVisible = $state(false);
@@ -364,6 +368,10 @@
         console.warn("Geology data not available:", e);
       }
 
+      // Routes first (render below nodes), then node markers
+      cleanupRoutes = addRouteLayer(map);
+      cleanupNodes = addNodeLayer(map);
+
       loading = false;
     });
 
@@ -375,6 +383,8 @@
     });
 
     return () => {
+      cleanupNodes?.();
+      cleanupRoutes?.();
       map.remove();
       maplibregl.removeProtocol(terrain.protocolId);
       maplibregl.removeProtocol("pmtiles");

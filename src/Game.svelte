@@ -3,6 +3,7 @@
   import GameTime from "./ui/hud/GameTime.svelte";
   import PauseMenu from "./ui/menu/PauseMenu.svelte";
   import MarsMap from "./ui/map/MarsMap.svelte";
+  import NodeInfo from "./ui/panels/NodeInfo.svelte";
 
   import { handleKeydown } from "./keybinds";
   import { createStepper, TICK_DURATION_MS } from "./sim/tick";
@@ -69,6 +70,7 @@
 
   <main class="map-viewport">
     <MarsMap />
+    <NodeInfo />
   </main>
 </div>
 
