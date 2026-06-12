@@ -68,7 +68,7 @@ describe('generateBoard', () => {
       if (c.type === 'hauling') {
         expect(c.quantity).toBeGreaterThan(0)
         expect(c.commodity).toBeDefined()
-      } else {
+      } else if (c.type === 'combat' || c.type === 'security') {
         expect(c.hostiles).toBeGreaterThanOrEqual(2)
         expect(c.deadlineTick).not.toBeNull()
       }

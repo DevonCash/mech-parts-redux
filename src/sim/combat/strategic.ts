@@ -9,7 +9,7 @@
  * Future (noted, not built): comm-range limits on orders, mech fuel,
  * raider quanta as live units replacing the road-ambush dice.
  */
-import { marsDistance } from '../constants'
+import { KM_PER_DEG, marsDistance } from '../constants'
 import type { Rng } from '../rng'
 import { TICK_DURATION_MS } from '../tick'
 import {
@@ -53,6 +53,19 @@ export interface StrategicEvent {
   /** Set for unit-destroyed */
   unitId?: string
   side?: Unit['side']
+  /** Who fired the killing shot — piracy attribution */
+  attackerSide?: Unit['side']
+}
+
+/**
+ * One predation rule for the whole sim: hostiles prey on everyone,
+ * players auto-acquire hostiles only (attacking a neutral takes an
+ * explicit order — that's piracy), neutrals never fight.
+ */
+function isEnemy(unit: Unit, other: Unit): boolean {
+  if (unit.side === 'neutral') return false
+  if (unit.side === 'hostile') return other.side !== 'hostile'
+  return other.side === 'hostile'
 }
 
 export interface StrategicResult {
@@ -114,8 +127,9 @@ function quietWorld(inputUnits: Unit[], roster: Pilot[]): boolean {
     if (unitDestroyed(u)) continue
     if (u.order.kind === 'attack' || hasCooldowns(u)) return false
 
-    if (u.side === 'player') {
-      if (u.pilotId) {
+    if (u.side !== 'hostile') {
+      // Player and neutral units: order-quiet with a steady pilot.
+      if (u.side === 'player' && u.pilotId) {
         const pilot = roster.find((p) => p.id === u.pilotId)
         if (pilot && breakdown(pilot) !== null) return false
       }
@@ -126,10 +140,11 @@ function quietWorld(inputUnits: Unit[], roster: Pilot[]): boolean {
     // Settled at camp? (Otherwise it owes a drift-home step.)
     if (Math.abs(u.lat - u.spawn[0]) * KM_PER_DEG > DRIFT_DEADZONE_KM) return false
     if (marsDistance(u.lat, u.lng, u.spawn[0], u.spawn[1]) > DRIFT_DEADZONE_KM) return false
-    // Any enemy inside the leash wakes the band.
+    // Any prey inside the leash wakes the band — players and convoys
+    // alike; the war runs whether or not anyone is watching.
     const leash = u.leashKm ?? LEASH_KM
     for (const p of inputUnits) {
-      if (p.side !== 'player' || unitDestroyed(p)) continue
+      if (p.side === 'hostile' || unitDestroyed(p)) continue
       if (Math.abs(u.spawn[0] - p.lat) * KM_PER_DEG > leash) continue
       if (marsDistance(u.spawn[0], u.spawn[1], p.lat, p.lng) <= leash) return false
     }
@@ -152,7 +167,7 @@ export function advanceUnits(
     const docked: { unitId: string; nodeId: string }[] = []
     let units = inputUnits
     inputUnits.forEach((unit, i) => {
-      if (unit.side !== 'player' || unit.order.kind !== 'move') return
+      if (unit.side === 'hostile' || unit.order.kind !== 'move') return
       if (unit.id === CRAWLER_UNIT_ID && !crawlerCanMove) return
       if (unitDestroyed(unit)) return
       const step = advanceAlongOrder(unit.lat, unit.lng, unit.order, unitSpeedKmS(unit), TICK_S)
@@ -220,7 +235,7 @@ export function advanceUnits(
         failure === 'berserk' || unit.side === 'hostile' ? Infinity : AGGRO_RANGE_KM
       const leash = unit.leashKm ?? LEASH_KM
       for (const other of units.values()) {
-        if (other.side === unit.side || destroyedIds.has(other.id)) continue
+        if (!isEnemy(unit, other) || destroyedIds.has(other.id)) continue
         // Latitude lower-bounds the great-circle distance (1° ≈ 59.2 km)
         // — a cheap reject before the haversine for the common case of
         // far-apart units.
@@ -320,6 +335,7 @@ export function advanceUnits(
             message: `${target.name} DESTROYED`,
             unitId: target.id,
             side: target.side,
+            attackerSide: unit.side,
           })
           // Watching an ally die is worse than taking a hit.
           for (const other of units.values()) {
@@ -344,8 +360,6 @@ export function advanceUnits(
 }
 
 // ── Hostile spawning & salvage ──────────────────────────────────────
-
-const KM_PER_DEG = 59.2
 
 /** Spawn a combat contract's garrison at its site (called on accept). */
 export function spawnHostiles(

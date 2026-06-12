@@ -74,6 +74,9 @@ export const UnitOrderSchema = z.discriminatedUnion('kind', [
     kind: z.literal('move'),
     waypoints: z.array(z.tuple([z.number(), z.number()])),
     mode: z.enum(['open', 'road']),
+    /** Road speed multiplier (1/terrain, distance-weighted across the
+     *  path's routes). Absent on old saves → ROAD_SPEED_MULT. */
+    roadMult: z.number().optional(),
     /** Dock at this node on arrival (crawler) */
     dockNodeId: z.string().optional(),
   }),
@@ -85,7 +88,9 @@ export const UnitSchema = z.object({
   id: z.string(),
   name: z.string(),
   chassisId: z.string(),
-  side: z.enum(['player', 'hostile']),
+  /** neutral: NPC convoys — hostiles prey on them, players may turn
+   *  pirate with an explicit attack order, they never fire back */
+  side: z.enum(['player', 'hostile', 'neutral']),
   lat: z.number(),
   lng: z.number(),
   /** Component stacks per location id, ordered outermost-first */

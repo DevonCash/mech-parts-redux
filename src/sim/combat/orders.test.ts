@@ -66,12 +66,35 @@ describe('advanceAlongOrder', () => {
     expect(step.arrived).toBe(false)
   })
 
-  it('roads double ground speed', () => {
+  it('roads without an explicit multiplier (legacy orders) run at the default', () => {
     const open = advanceAlongOrder(0, 0, move([[1, 0]], 'open'), 0.5, 0.1)
     const road = advanceAlongOrder(0, 0, move([[1, 0]], 'road'), 0.5, 0.1)
     const openKm = marsDistance(0, 0, open.lat, open.lng)
     const roadKm = marsDistance(0, 0, road.lat, road.lng)
     expect(roadKm / openKm).toBeCloseTo(ROAD_SPEED_MULT, 2)
+  })
+
+  it('road orders honor their terrain-derived speed multiplier', () => {
+    const open = advanceAlongOrder(0, 0, move([[1, 0]], 'open'), 0.5, 0.1)
+    const rough = advanceAlongOrder(
+      0,
+      0,
+      { kind: 'move', waypoints: [[1, 0]], mode: 'road', roadMult: 1.25 },
+      0.5,
+      0.1,
+    )
+    const openKm = marsDistance(0, 0, open.lat, open.lng)
+    const roughKm = marsDistance(0, 0, rough.lat, rough.lng)
+    expect(roughKm / openKm).toBeCloseTo(1.25, 2)
+  })
+
+  it('built road orders carry the reciprocal of the path terrain factor', () => {
+    const order = buildRoadMoveOrder('valles-hub', 'chryse-landing', nodes, routes)
+    if (!order || order.kind !== 'move') throw new Error('expected road order')
+    expect(order.roadMult).toBeDefined()
+    // Terrain factors live in [0.5, 0.85] → multipliers in [1.18, 2].
+    expect(order.roadMult!).toBeGreaterThanOrEqual(1 / 0.85 - 1e-9)
+    expect(order.roadMult!).toBeLessThanOrEqual(2 + 1e-9)
   })
 
   it('pops waypoints as reached and collapses to hold on arrival', () => {
@@ -99,7 +122,8 @@ describe('advanceAlongOrder', () => {
     const order = buildRoadMoveOrder('valles-hub', 'chryse-landing', nodes, routes)!
     if (order.kind !== 'move') throw new Error('expected move')
     const ground = remainingKm(...nodes['valles-hub'].position, order)
-    const expectTicks = Math.ceil(ground / (0.5 * ROAD_SPEED_MULT * 0.1))
+    const mult = order.roadMult ?? ROAD_SPEED_MULT
+    const expectTicks = Math.ceil(ground / (0.5 * mult * 0.1))
 
     let [lat, lng] = nodes['valles-hub'].position
     let current: UnitOrder = order
@@ -138,7 +162,8 @@ describe('antimeridian', () => {
     const order = buildRoadMoveOrder('olympus-mine', 'elysium-mine', nodes, routes)
     if (!order || order.kind !== 'move') throw new Error('expected road order')
     const ground = remainingKm(...nodes['olympus-mine'].position, order)
-    const expectTicks = Math.ceil(ground / (0.5 * ROAD_SPEED_MULT * 0.1))
+    const mult = order.roadMult ?? ROAD_SPEED_MULT
+    const expectTicks = Math.ceil(ground / (0.5 * mult * 0.1))
 
     let [lat, lng] = nodes['olympus-mine'].position
     let current: UnitOrder = order

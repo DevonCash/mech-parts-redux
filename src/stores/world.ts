@@ -1,4 +1,5 @@
 import { atom } from 'nanostores'
+import type { CargoWreck } from '../sim/economy/convoys'
 import type { GameNode, Quantum, Route } from '../sim/economy/models'
 import { seedNodes } from '../sim/economy/seed-nodes'
 import { generateSeedRoutes } from '../sim/economy/seed-routes'
@@ -24,3 +25,6 @@ export const routes = atom<Record<string, Route>>(
 
 /** NPC economy agents — written back from the pipeline each batch */
 export const quanta = atom<Quantum[]>([])
+
+/** Cargo wrecks of killed convoys — lootable, salvage-contractable */
+export const wrecks = atom<CargoWreck[]>([])

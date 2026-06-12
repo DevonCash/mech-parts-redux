@@ -76,6 +76,8 @@ export const REP_COMPLETED = 0.05
 export const REP_FAILED = -0.06
 /** Abandoning means you quit. Worse (contracts.md). */
 export const REP_ABANDONED = -0.1
+/** Killing a neutral convoy — the shipment's buyer remembers piracy. */
+export const REP_PIRACY = -0.15
 
 export function adjustReputation(
   reputation: Reputation,

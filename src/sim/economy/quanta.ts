@@ -51,19 +51,55 @@ export function seedQuanta(nodeIds: string[], count: number, rng: Rng): Quantum[
       destination: null,
       cargo: null,
       credits: 2000,
+      materialized: false,
     })
   }
   return quanta
 }
 
-interface Adjacency {
+/**
+ * Refill the hauler population toward `target` (ECON cadence, one per
+ * step): a raided convoy is one outfit's tragedy, not a demographic
+ * collapse — fresh outfits dock and pick up the slack.
+ */
+export function refillQuanta(
+  quanta: Quantum[],
+  nodeIds: string[],
+  target: number,
+  rng: Rng,
+): Quantum[] {
+  if (quanta.length >= target) return quanta
+  let maxSerial = -1
+  for (const q of quanta) {
+    const n = Number(q.id.slice(2))
+    if (Number.isFinite(n) && n > maxSerial) maxSerial = n
+  }
+  const sorted = [...nodeIds].sort()
+  return [
+    ...quanta,
+    {
+      id: `q-${maxSerial + 1}`,
+      kind: 'hauler',
+      location: rng.pick(sorted),
+      route: null,
+      reversed: false,
+      progress: 0,
+      destination: null,
+      cargo: null,
+      credits: 2000,
+      materialized: false,
+    },
+  ]
+}
+
+export interface Adjacency {
   routeId: string
   reversed: boolean
   neighbor: string
   effectiveKm: number
 }
 
-function neighborsOf(nodeId: string, routes: Record<string, Route>): Adjacency[] {
+export function neighborsOf(nodeId: string, routes: Record<string, Route>): Adjacency[] {
   const result: Adjacency[] = []
   for (const route of Object.values(routes)) {
     if (route.from === nodeId) {
@@ -90,6 +126,46 @@ export interface QuantaStepResult {
   markets: Record<string, NodeMarket>
 }
 
+export interface PlannedRun {
+  adj: Adjacency
+  commodity: Commodity
+  qty: number
+  profit: number
+}
+
+/**
+ * The hauler's brain: best profitable neighbor run from `loc` given the
+ * local market and a credit budget. Shared by the decision step and by
+ * escort offer generation (a chartered convoy hauls what it would have
+ * hauled anyway).
+ */
+export function pickBestRun(
+  loc: string,
+  markets: Record<string, NodeMarket>,
+  routes: Record<string, Route>,
+  credits: number,
+): PlannedRun | null {
+  const market = markets[loc]
+  if (!market) return null
+  let best: PlannedRun | null = null
+  for (const adj of neighborsOf(loc, routes)) {
+    const there = markets[adj.neighbor]
+    if (!there) continue
+    for (const c of TRADABLE) {
+      const buy = market.prices[c]
+      const sell = there.prices[c] * SELL_MARGIN
+      const stock = Math.floor(market.inventory[c] ?? 0)
+      const qty = Math.min(HAUL_CAPACITY, stock, Math.floor(credits / Math.max(0.01, buy)))
+      if (qty <= 0) continue
+      const profit = (sell - buy) * qty - adj.effectiveKm * HAUL_COST_PER_KM
+      if (profit > MIN_PROFIT && (!best || profit > best.profit)) {
+        best = { adj, commodity: c, qty, profit }
+      }
+    }
+  }
+  return best
+}
+
 /**
  * Per-tick movement for quanta in transit. Cheap: a progress add per
  * moving hauler; arrival unloading happens in the decision step.
@@ -97,10 +173,26 @@ export interface QuantaStepResult {
 export function moveQuanta(
   quanta: Quantum[],
   routes: Record<string, Route>,
+  tick: number,
 ): Quantum[] {
   let changed = false
   const next = quanta.map((q) => {
-    if (!q.route) return q
+    // Escort charters: hold at the node until the scheduled departure.
+    if (q.location && q.holdUntilTick !== undefined && q.forcedRoute) {
+      if (tick < q.holdUntilTick) return q
+      changed = true
+      return {
+        ...q,
+        location: null,
+        route: q.forcedRoute.routeId,
+        reversed: q.forcedRoute.reversed,
+        progress: 0,
+        destination: q.forcedRoute.destination,
+        holdUntilTick: undefined,
+        forcedRoute: undefined,
+      }
+    }
+    if (!q.route || q.materialized) return q
     const route = routes[q.route]
     if (!route) return q
     changed = true
@@ -130,7 +222,7 @@ export function quantaDecisions(
   const nextQuanta = quanta.map((quantum) => {
     let q = quantum
     const loc = q.location
-    if (!loc) return q
+    if (!loc || q.materialized || q.holdUntilTick !== undefined) return q
     const here = nextMarkets[loc]
     if (!here) return q
 
@@ -154,22 +246,7 @@ export function quantaDecisions(
     // Scan neighbor spreads for the next run.
     const market = nextMarkets[loc]
     const adjacent = neighborsOf(loc, routes)
-    let best: { adj: Adjacency; commodity: Commodity; qty: number; profit: number } | null = null
-    for (const adj of adjacent) {
-      const there = nextMarkets[adj.neighbor]
-      if (!there) continue
-      for (const c of TRADABLE) {
-        const buy = market.prices[c]
-        const sell = there.prices[c] * SELL_MARGIN
-        const stock = Math.floor(market.inventory[c] ?? 0)
-        const qty = Math.min(HAUL_CAPACITY, stock, Math.floor(q.credits / Math.max(0.01, buy)))
-        if (qty <= 0) continue
-        const profit = (sell - buy) * qty - adj.effectiveKm * HAUL_COST_PER_KM
-        if (profit > MIN_PROFIT && (!best || profit > best.profit)) {
-          best = { adj, commodity: c, qty, profit }
-        }
-      }
-    }
+    const best = pickBestRun(loc, nextMarkets, routes, q.credits)
 
     if (best) {
       const cost = round2(market.prices[best.commodity] * best.qty)

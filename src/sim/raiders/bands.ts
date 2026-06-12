@@ -102,16 +102,26 @@ export function liveBandIds(units: Unit[]): Set<string> {
   return ids
 }
 
-/** Camp anchors of living bands (one per band). */
-export function liveCamps(units: Unit[]): [number, number][] {
+export interface BandCamp {
+  bandId: string
+  camp: [number, number]
+}
+
+/** Camp anchors of living bands (one per band), tagged with their band id. */
+export function liveBandCamps(units: Unit[]): BandCamp[] {
   const seen = new Set<string>()
-  const camps: [number, number][] = []
+  const camps: BandCamp[] = []
   for (const u of units) {
     if (!u.bandId || !u.spawn || unitDestroyed(u) || seen.has(u.bandId)) continue
     seen.add(u.bandId)
-    camps.push(u.spawn)
+    camps.push({ bandId: u.bandId, camp: u.spawn })
   }
   return camps
+}
+
+/** Camp anchors of living bands (one per band). */
+export function liveCamps(units: Unit[]): [number, number][] {
+  return liveBandCamps(units).map((c) => c.camp)
 }
 
 /**

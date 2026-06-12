@@ -5,6 +5,8 @@
  * Hauling: move commodity cargo origin → destination.
  * Combat: clear a garrison at the destination node.
  * Security: destroy a raider band camped near the issuing node.
+ * Escort: see a chartered convoy safely past a named band.
+ * Salvage: recover cargo from a convoy wreck and deliver it here.
  */
 import { z } from 'zod'
 import { Commodity } from '../economy/models'
@@ -61,10 +63,42 @@ export const SecurityContractSchema = ContractBase.extend({
 })
 export type SecurityContract = z.infer<typeof SecurityContractSchema>
 
+export const EscortContractSchema = ContractBase.extend({
+  type: z.literal('escort'),
+  /** The chartered convoy (quantum id) */
+  quantumId: z.string(),
+  /** Its fixed route — destination is the route's far node */
+  routeId: z.string(),
+  /** The named threat: this band always sorties on the convoy */
+  bandId: z.string(),
+  /** Band size at posting (pay basis + UI) */
+  hostiles: z.number(),
+  /** Convoy departs at this tick (boardExpiryTick == departTick) */
+  departTick: z.number(),
+  /** The shipment, for pay basis + UI */
+  commodity: Commodity,
+  quantity: z.number(),
+})
+export type EscortContract = z.infer<typeof EscortContractSchema>
+
+export const SalvageContractSchema = ContractBase.extend({
+  type: z.literal('salvage'),
+  /** The wreck holding the cargo */
+  wreckId: z.string(),
+  /** Wreck position, for the map/UI */
+  site: z.tuple([z.number(), z.number()]),
+  /** Cargo to recover and deliver to the issuing node */
+  commodity: Commodity,
+  quantity: z.number(),
+})
+export type SalvageContract = z.infer<typeof SalvageContractSchema>
+
 export const ContractSchema = z.discriminatedUnion('type', [
   HaulingContractSchema,
   CombatContractSchema,
   SecurityContractSchema,
+  EscortContractSchema,
+  SalvageContractSchema,
 ])
 export type Contract = z.infer<typeof ContractSchema>
 export type ContractType = Contract['type']

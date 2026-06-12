@@ -3,14 +3,19 @@
     activeContracts,
     deliverContract,
     abandonContract,
+    lootWreck,
   } from "../../stores/contracts";
-  import { crawlerDock, units } from "../../stores/units";
-  import { nodes } from "../../stores/world";
+  import { crawlerDock, crawlerUnit, units } from "../../stores/units";
+  import { nodes, quanta, wrecks } from "../../stores/world";
   import { tick } from "../../stores/time";
   import { company } from "../../stores/company";
-  import type { Contract } from "../../sim/contracts/models";
+  import { LOOT_RANGE_KM } from "../../sim/balance";
+  import type { Contract, EscortContract, SalvageContract } from "../../sim/contracts/models";
   import type { Unit } from "../../sim/combat/models";
   import { unitDestroyed } from "../../sim/combat/damage";
+  import { marsDistance } from "../../sim/constants";
+  import type { CargoWreck } from "../../sim/economy/convoys";
+  import type { Quantum } from "../../sim/economy/models";
   import { formatCredits, formatTickDuration } from "../format";
 
   let active = $state<readonly Contract[]>(activeContracts.get());
@@ -19,6 +24,8 @@
   let nodeMap = $state(nodes.get());
   let currentTick = $state(tick.get());
   let companyState = $state(company.get());
+  let allQuanta = $state<readonly Quantum[]>(quanta.get());
+  let allWrecks = $state<readonly CargoWreck[]>(wrecks.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
@@ -29,9 +36,37 @@
       nodes.subscribe((v) => (nodeMap = v)),
       tick.subscribe((v) => (currentTick = v)),
       company.subscribe((v) => (companyState = v)),
+      quanta.subscribe((v) => (allQuanta = v)),
+      wrecks.subscribe((v) => (allWrecks = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
+
+  function convoyStatus(contract: EscortContract): string {
+    const q = allQuanta.find((x) => x.id === contract.quantumId);
+    if (!q) return "LOST";
+    if (q.materialized) return "UNDER ATTACK";
+    if (q.location === contract.origin) {
+      return `DEPARTS ${formatTickDuration(Math.max(0, contract.departTick - currentTick))}`;
+    }
+    return "IN TRANSIT";
+  }
+
+  function wreckOf(contract: SalvageContract): CargoWreck | undefined {
+    return allWrecks.find((w) => w.id === contract.wreckId);
+  }
+
+  function inLootRange(contract: SalvageContract): boolean {
+    const crawler = crawlerUnit();
+    const wreck = wreckOf(contract);
+    if (!crawler || !wreck) return false;
+    return marsDistance(crawler.lat, crawler.lng, wreck.lat, wreck.lng) <= LOOT_RANGE_KM;
+  }
+
+  function loot(contract: SalvageContract) {
+    const result = lootWreck(contract.wreckId);
+    lastError = result.ok ? null : result.reason;
+  }
 
   function hostilesUp(contractId: string): number {
     return allUnits.filter((u) => u.contractId === contractId && !unitDestroyed(u)).length;
@@ -70,7 +105,7 @@
     <ul>
       {#each active as contract (contract.id)}
         {@const canDeliver =
-          contract.type === "hauling" &&
+          (contract.type === "hauling" || contract.type === "salvage") &&
           dock === contract.destination &&
           (companyState.cargo[contract.commodity] ?? 0) >= contract.quantity}
         <li>
@@ -85,6 +120,16 @@
                 PATROL {bandUp(contract.bandId)}/{contract.hostiles} RAIDERS
               </span>
               <span class="arrow">@</span>
+            {:else if contract.type === "escort"}
+              <span class="cargo escort">
+                ESCORT {contract.quantity} {contract.commodity.toUpperCase()}
+              </span>
+              <span class="arrow">→</span>
+            {:else if contract.type === "salvage"}
+              <span class="cargo escort">
+                SALVAGE {contract.quantity} {contract.commodity.toUpperCase()}
+              </span>
+              <span class="arrow">→</span>
             {:else}
               <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
               <span class="arrow">→</span>
@@ -93,7 +138,16 @@
             <span class="pay">¤{formatCredits(contract.pay)}</span>
           </div>
           <div class="row sub">
-            {#if contract.deadlineTick !== null}
+            {#if contract.type === "escort"}
+              <span class="deadline {convoyStatus(contract) === 'UNDER ATTACK' ? 'red' : ''}">
+                {convoyStatus(contract)}
+              </span>
+            {:else if contract.type === "salvage"}
+              {@const wreck = wreckOf(contract)}
+              <span class="deadline">
+                {wreck ? `${wreck.cargo.qty} AT SITE` : "SITE STRIPPED"}
+              </span>
+            {:else if contract.deadlineTick !== null}
               <span class="deadline {urgency(contract.deadlineTick)}">
                 {contract.deadlineTick > currentTick
                   ? `DUE ${formatTickDuration(contract.deadlineTick - currentTick)}`
@@ -104,6 +158,8 @@
             {/if}
             {#if canDeliver}
               <button class="deliver" onclick={() => deliver(contract.id)}>DELIVER</button>
+            {:else if contract.type === "salvage" && inLootRange(contract)}
+              <button class="deliver" onclick={() => loot(contract)}>LOOT</button>
             {:else}
               <button class="abandon" onclick={() => abandon(contract.id)}>ABANDON</button>
             {/if}
@@ -169,6 +225,10 @@
 
   .cargo.combat {
     color: #ff5050;
+  }
+
+  .cargo.escort {
+    color: #d0c040;
   }
 
   .arrow {

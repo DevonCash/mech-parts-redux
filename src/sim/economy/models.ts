@@ -125,6 +125,17 @@ export const QuantumSchema = z.object({
     .object({ commodity: Commodity, qty: z.number(), paid: z.number() })
     .nullable(),
   credits: z.number(),
+  /** Embodied as a strategic Unit (convoy under threat) — progress is
+   *  suspended; the unit drives until the encounter resolves */
+  materialized: z.boolean().default(false),
+  /** Escort charter: hold at location until this tick, then depart */
+  holdUntilTick: z.number().optional(),
+  /** Route forced by an escort charter, taken at holdUntilTick */
+  forcedRoute: z
+    .object({ routeId: z.string(), reversed: z.boolean(), destination: z.string() })
+    .optional(),
+  /** Mean component hp fraction carried across materializations */
+  hullFrac: z.number().optional(),
 })
 export type Quantum = z.infer<typeof QuantumSchema>
 

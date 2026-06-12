@@ -126,6 +126,17 @@ export const COMPONENTS: Record<string, ComponentTemplate> = {
     maxHP: 40,
     hardness: 1,
   },
+  // ── Hauler convoys — the economy on wheels ─────────────────────────
+  // Matches QUANTUM_SPEED_KM_S so a convoy's transit time is identical
+  // whether it's simulated as a quantum or materialized as a unit.
+  'hauler-wheels': {
+    id: 'hauler-wheels',
+    name: 'Hauler Wheels',
+    type: 'locomotion',
+    maxHP: 30,
+    hardness: 1,
+    topSpeedKmS: 0.022,
+  },
 }
 
 export const CHASSIS: Record<string, Chassis> = {
@@ -184,6 +195,17 @@ export const CHASSIS: Record<string, Chassis> = {
       { id: 'wheels', label: 'WHEELS', hitWeight: 3, parent: 'cab' },
     ],
   },
+  // Unarmed cargo truck — rifles chew it in under a game-minute unless
+  // someone stands in the way. That someone is the escort business.
+  hauler: {
+    id: 'hauler',
+    name: 'Cargo Hauler',
+    locations: [
+      { id: 'cab', label: 'CAB', hitWeight: 3 },
+      { id: 'bed', label: 'BED', hitWeight: 4, parent: 'cab' },
+      { id: 'wheels', label: 'WHEELS', hitWeight: 3, parent: 'cab' },
+    ],
+  },
   crawler: {
     id: 'crawler',
     name: 'Mobile Operations Crawler',
@@ -232,6 +254,11 @@ const LOADOUTS: Record<string, Record<string, string[]>> = {
     cab: ['cockpit'],
     bed: ['rifle', 'truck-frame'],
     wheels: ['wheels'],
+  },
+  hauler: {
+    cab: ['cockpit'],
+    bed: ['plate-light', 'truck-frame'],
+    wheels: ['hauler-wheels'],
   },
 }
 

@@ -25,6 +25,26 @@ export const CARGO_CAPACITY = 60
 /** Maximum simultaneously active contracts (reputation scaling is Phase 3) */
 export const ACTIVE_CONTRACT_SLOTS = 3
 
+// ── Terrain ─────────────────────────────────────────────────────────
+// The planet is a fixed procedural heightmap (src/sim/terrain) — the
+// same world in every session, so the seed is a constant, not the
+// session seed. Roads are priced by the ground they cross.
+
+/** World seed for the synthetic heightmap */
+export const TERRAIN_SEED = 8421
+
+/** Best route terrain factor — a graded road across a plain
+ *  (effectiveKm = distance × terrain; speed mult = 1/terrain) */
+export const TERRAIN_FACTOR_MIN = 0.5
+
+/** Worst route terrain factor — switchbacks through highlands; must
+ *  stay below overland's implicit 1.0 so roads always win */
+export const TERRAIN_FACTOR_MAX = 0.85
+
+/** Mean local relief (m) at which a route hits TERRAIN_FACTOR_MAX.
+ *  Seeded-network route means run ~70–440 m at the 40 km sample ring. */
+export const TERRAIN_ROUGHNESS_FULL_M = 400
+
 // ── Fuel ────────────────────────────────────────────────────────────
 
 /** Fuel burned per effective km traveled (route distance × terrain) */
@@ -126,6 +146,55 @@ export const SECURITY_OFFER_RANGE_KM = 60
 
 /** Patrol deadline — generous, the target band doesn't move (~22 game-hours) */
 export const SECURITY_DEADLINE_TICKS = 800000
+
+// ── Convoy war ──────────────────────────────────────────────────────
+// Raiders prey on NPC hauler convoys: a band sorties on a passing
+// convoy when its raid cooldown has expired (deterministic — no dice).
+// Escorts guard named convoys; wrecks feed the salvage business.
+
+/** Ticks between convoy threat scans (~1.1 km of convoy motion) */
+export const CONVOY_THREAT_INTERVAL = 500
+
+/** Convoys materialize as units within this of a hungry camp
+ *  (== TECHNICAL_LEASH_KM so a materialized convoy is engageable) */
+export const CONVOY_THREAT_RADIUS_KM = 10
+
+/** Minimum ticks between sorties per band (~2.5 game-hours) */
+export const RAID_COOLDOWN_TICKS = 90_000
+
+/** Share of a raided convoy's cargo the band hauls back to camp */
+export const RAID_LOOT_FRACTION = 0.4
+
+/** Convoys also materialize this close to a player unit (piracy reach) */
+export const PIRACY_RANGE_KM = 3
+
+/** Ticks between an escort offer's posting and the convoy's departure
+ *  (1 game-hour to pre-position or pre-clear) */
+export const ESCORT_DEPART_DELAY_TICKS = 36_000
+
+/** Escort offers per board refresh */
+export const ESCORT_OFFERS_MAX = 1
+
+/** Flat component of escort pay */
+export const ESCORT_PAY_BASE = 600
+
+/** Escort pay per raider in the named band */
+export const ESCORT_PAY_PER_RAIDER = 600
+
+/** Escort pay as a fraction of the shipment's credit value */
+export const ESCORT_PAY_VALUE_FACTOR = 0.4
+
+/** Wrecks within this of a node appear on its board as salvage work */
+export const SALVAGE_OFFER_RANGE_KM = 80
+
+/** Salvage pay as a fraction of the recovered cargo's credit value */
+export const SALVAGE_PAY_VALUE_FACTOR = 0.5
+
+/** Unlooted wreck lifetime (~6.7 game-hours) */
+export const WRECK_TTL_TICKS = 240_000
+
+/** Crawler must be this close to loot a wreck (matches recall range) */
+export const LOOT_RANGE_KM = 2
 
 // ── Recruitment & acquisition ───────────────────────────────────────
 

@@ -2,18 +2,38 @@
  * Custom MapLibre protocol that renders stepped hillshade + minor contour
  * lines from raw terrarium-encoded DEM tiles using WebGL on an OffscreenCanvas.
  *
- * Fetches DEM PNGs directly from PMTiles — bypasses the contour worker entirely.
- * All per-pixel math (elevation decoding, Horn's method, quantization, contour
- * detection) runs in a single fragment shader pass.
+ * The DEM comes through a pluggable TerrainDemSource — PMTiles when the
+ * real MOLA tileset exists, the synthetic heightmap otherwise. All
+ * per-pixel math (elevation decoding, Horn's method, quantization)
+ * runs in a single fragment shader pass.
  */
 
 import { PMTiles } from "pmtiles";
 
+/** Where raw terrarium DEM tiles come from. */
+export interface TerrainDemSource {
+  maxzoom: number;
+  /** Raw terrarium tile as a bitmap, or null when missing. */
+  getTile(z: number, x: number, y: number): Promise<ImageBitmap | null>;
+}
+
+/** DEM tiles fetched from a PMTiles archive (the real MOLA pipeline). */
+export function pmtilesDemSource(demUrl: string, maxzoom = 7): TerrainDemSource {
+  const pmtiles = new PMTiles(demUrl);
+  return {
+    maxzoom,
+    async getTile(z, x, y) {
+      const tileData = await pmtiles.getZxy(z, x, y);
+      if (!tileData || !tileData.data) return null;
+      const blob = new Blob([tileData.data], { type: "image/png" });
+      return createImageBitmap(blob);
+    },
+  };
+}
+
 interface TerrainShaderOptions {
-  /** HTTP URL for the DEM PMTiles file, e.g. "http://localhost/data/mars-terrain.pmtiles" */
-  demUrl: string;
-  /** Max zoom level of the DEM tileset (default: 7) */
-  maxzoom?: number;
+  /** Raw DEM tile provider */
+  source: TerrainDemSource;
   /** Light direction in degrees clockwise from north (default: 315) */
   azimuth?: number;
   /** Light altitude in degrees above horizon (default: 45) */
@@ -165,14 +185,14 @@ function getGL(size: number) {
 
 export function createTerrainShaderProtocol(options: TerrainShaderOptions) {
   const {
-    demUrl,
-    maxzoom = 7,
+    source,
     azimuth = 315,
     altitude = 45,
     steps = 6,
     minBrightness = 0,
     maxBrightness = 0.2,
   } = options;
+  const maxzoom = source.maxzoom;
 
   const azRad = ((360 - azimuth + 90) * Math.PI) / 180;
   const altRad = (altitude * Math.PI) / 180;
@@ -181,9 +201,6 @@ export function createTerrainShaderProtocol(options: TerrainShaderOptions) {
 
   const protocolId = "terrain-shader";
   const tileUrl = `${protocolId}://{z}/{x}/{y}`;
-
-  // Open the PMTiles archive directly — bypasses the contour worker
-  const pmtiles = new PMTiles(demUrl);
 
   const handler = async (
     params: { url: string },
@@ -205,18 +222,15 @@ export function createTerrainShaderProtocol(options: TerrainShaderOptions) {
       demY = y >> dz;
     }
 
-    // Fetch the raw terrarium PNG directly from PMTiles
-    const tileData = await pmtiles.getZxy(demZ, demX, demY);
-    if (!tileData || !tileData.data) {
+    const bitmap = await source.getTile(demZ, demX, demY);
+    if (!bitmap) {
       // Return a transparent tile for missing data
       const empty = new OffscreenCanvas(1, 1);
-      const ctx = empty.getContext("2d")!;
+      empty.getContext("2d");
       const blob = await empty.convertToBlob({ type: "image/png" });
       return { data: await blob.arrayBuffer() };
     }
 
-    const blob = new Blob([tileData.data], { type: "image/png" });
-    const bitmap = await createImageBitmap(blob);
     const size = bitmap.width; // assume square
 
     // ── WebGL render ──

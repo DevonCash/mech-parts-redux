@@ -6,6 +6,7 @@
  * into a SessionState for tick batches and saves, then written back.
  */
 import type { CompanyState } from '../economy/market'
+import type { CargoWreck } from '../economy/convoys'
 import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
 import type { Unit } from '../combat/models'
@@ -51,6 +52,10 @@ export interface SessionState {
   crawlerDock: string | null
   /** NPC economy agents */
   quanta: Quantum[]
+  /** Cargo wrecks of killed convoys — lootable, salvage-contractable */
+  wrecks: CargoWreck[]
+  /** Last sortie tick per raider band — the raid cooldown clock */
+  bandRaids: Record<string, number>
   /** The company's pilot roster */
   pilots: Pilot[]
   /** Pilots for hire per node */
@@ -80,6 +85,10 @@ export type GameEventKind =
   | 'combat-contact'
   | 'pilot-kia'
   | 'salvage-recovered'
+  | 'convoy-attacked'
+  | 'convoy-lost'
+  | 'convoy-arrived'
+  | 'piracy'
   | 'victory'
   | 'stranded'
   | 'bankrupt'

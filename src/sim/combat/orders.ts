@@ -64,7 +64,8 @@ export function advanceAlongOrder(
     return { lat, lng, order, arrived: false }
   }
 
-  const speed = baseSpeedKmS * (order.mode === 'road' ? ROAD_SPEED_MULT : 1)
+  const speed =
+    baseSpeedKmS * (order.mode === 'road' ? (order.roadMult ?? ROAD_SPEED_MULT) : 1)
   let budget = speed * tickS
   let waypoints = order.waypoints
   let pos: [number, number] = [lat, lng]
@@ -121,6 +122,8 @@ export function buildRoadMoveOrder(
   if (!segments || segments.length === 0) return null
 
   const waypoints: [number, number][] = []
+  let totalKm = 0
+  let effectiveKm = 0
   for (const seg of segments) {
     const route = routes[seg.routeId]
     const path = seg.reversed ? [...route.path].reverse() : route.path
@@ -128,12 +131,17 @@ export function buildRoadMoveOrder(
     for (const point of waypoints.length === 0 ? path : path.slice(1)) {
       waypoints.push(point)
     }
+    totalKm += route.distance
+    effectiveKm += route.distance * route.terrain
   }
 
   return {
     kind: 'move',
     waypoints,
     mode: 'road',
+    // Speed is the reciprocal of the path's terrain factor, so actual
+    // travel time matches the effectiveKm every quote derives from.
+    roadMult: effectiveKm > 0 ? totalKm / effectiveKm : ROAD_SPEED_MULT,
     dockNodeId: targetNodeId,
   }
 }

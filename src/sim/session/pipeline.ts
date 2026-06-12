@@ -11,18 +11,28 @@
  * stage cheap and allocation-light on the no-op path.
  */
 import {
+  CONVOY_THREAT_INTERVAL,
   ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
+  QUANTA_COUNT,
+  RAID_LOOT_FRACTION,
   RAIDER_BAND_TARGET,
   RAIDER_RESPAWN_TICKS,
   SALVAGE_MECH_CHANCE,
+  WRECK_TTL_TICKS,
 } from '../balance'
 import { TICK_DURATION_MS } from '../tick'
 import { CRAWLER_SPEED_KM_S } from '../crawler/movement'
+import { quantumIdOfHauler, scanConvoys } from '../economy/convoys'
 import { econStep } from '../economy/production'
-import { moveQuanta, quantaDecisions } from '../economy/quanta'
+import { moveQuanta, quantaDecisions, refillQuanta } from '../economy/quanta'
 import type { Commodity } from '../economy/models'
-import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
+import {
+  boardStale,
+  generateBoard,
+  generateEscortOffers,
+  type WorldStatic,
+} from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
 import { CHASSIS, CRAWLER_UNIT_ID } from '../combat/catalog'
 import { liveBandIds, pickCampSite, spawnBand } from '../raiders/bands'
@@ -38,8 +48,10 @@ import {
 } from '../pilots/models'
 import {
   adjustReputation,
+  nodeFaction,
   REP_COMPLETED,
   REP_FAILED,
+  REP_PIRACY,
 } from '../factions/models'
 import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
@@ -89,6 +101,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let garage = state.garage
   let crawlerDock = state.crawlerDock
   let quanta = state.quanta
+  let wrecks = state.wrecks
+  let bandRaids = state.bandRaids
   let pilots = state.pilots
   let hirePools = state.hirePools
   let mechLots = state.mechLots
@@ -135,6 +149,66 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         }
         units = units.filter((u) => u.id !== e.unitId)
       }
+
+      // A dead convoy collapses to a cargo wreck: the unit and its
+      // quantum go, the cargo (less the raiders' cut) stays on the
+      // ground for whoever salvages it.
+      if (e.kind === 'unit-destroyed' && e.side === 'neutral' && e.unitId) {
+        const quantumId = quantumIdOfHauler(e.unitId)
+        const q = quantumId ? quanta.find((x) => x.id === quantumId) : undefined
+        const dead = units.find((u) => u.id === e.unitId)
+        if (q && dead) {
+          if (q.cargo) {
+            const keep = e.attackerSide === 'hostile' ? 1 - RAID_LOOT_FRACTION : 1
+            const qty = Math.floor(q.cargo.qty * keep)
+            if (qty > 0) {
+              wrecks = [
+                ...wrecks,
+                {
+                  id: `wreck-${q.id}-${tick}`,
+                  lat: dead.lat,
+                  lng: dead.lng,
+                  cargo: { commodity: q.cargo.commodity, qty },
+                  createdTick: tick,
+                },
+              ]
+            }
+          }
+          quanta = quanta.filter((x) => x.id !== q.id)
+          units = units.filter((u) => u.id !== e.unitId)
+
+          const escort = active.find((c) => c.type === 'escort' && c.quantumId === q.id)
+          if (escort) {
+            active = active.filter((c) => c.id !== escort.id)
+            reputation = adjustReputation(reputation, escort.faction, REP_FAILED)
+            stats = { ...stats, contractsFailed: stats.contractsFailed + 1 }
+            events.push({
+              tick,
+              kind: 'contract-failed',
+              message: `CONTRACT FAILED — ESCORTED CONVOY ${q.id.toUpperCase()} LOST`,
+            })
+          }
+
+          if (e.attackerSide === 'player') {
+            // The shipment's buyer remembers who shot the trucks.
+            const buyer = q.destination ? world.nodes[q.destination] : undefined
+            if (buyer) {
+              reputation = adjustReputation(reputation, nodeFaction(buyer), REP_PIRACY)
+            }
+            events.push({
+              tick,
+              kind: 'piracy',
+              message: `PIRACY — CONVOY ${q.id.toUpperCase()} DESTROYED BY YOUR LANCE`,
+            })
+          } else {
+            events.push({
+              tick,
+              kind: 'convoy-lost',
+              message: `CONVOY ${q.id.toUpperCase()} LOST TO RAIDERS`,
+            })
+          }
+        }
+      }
     }
 
     for (const dock of result.docked) {
@@ -163,7 +237,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
 
   // ── Combat/security resolution: last hostile down → paid ──────────
   for (const contract of active) {
-    if (contract.type === 'hauling') continue
+    if (contract.type !== 'combat' && contract.type !== 'security') continue
     const tagged =
       contract.type === 'combat'
         ? units.filter((u) => u.contractId === contract.id)
@@ -174,7 +248,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
 
     // One wreck is sometimes towable — it joins the garage as-is,
     // dead components and all, needing real repairs before it fights.
-    let wrecks = tagged
+    let mechWrecks = tagged
     if (rng.next() < SALVAGE_MECH_CHANCE && tagged.length > 0) {
       const prize = tagged[0]
       const recovered: Unit = {
@@ -189,7 +263,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         spawn: undefined,
       }
       garage = [...garage, recovered]
-      wrecks = tagged.slice(1)
+      mechWrecks = tagged.slice(1)
       events.push({
         tick,
         kind: 'salvage-recovered',
@@ -197,7 +271,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       })
     }
 
-    const salvage = rollSalvage(wrecks, rng)
+    const salvage = rollSalvage(mechWrecks, rng)
     let cargo = company.cargo
     const space = company.cargoCapacity - cargoUsed(company)
     const metal = Math.min(salvage.metal, space)
@@ -230,6 +304,38 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     pilots = pilots.map((p) => (deployedPilotIds.has(p.id) ? growSkills(p) : p))
   }
 
+  // ── Escort resolution: chartered convoy docked at its destination ─
+  for (const contract of active) {
+    if (contract.type !== 'escort') continue
+    const q = quanta.find((x) => x.id === contract.quantumId)
+    if (!q) {
+      // Convoy gone without a death event this tick — defensive: fail.
+      active = active.filter((c) => c.id !== contract.id)
+      reputation = adjustReputation(reputation, contract.faction, REP_FAILED)
+      stats = { ...stats, contractsFailed: stats.contractsFailed + 1 }
+      events.push({
+        tick,
+        kind: 'contract-failed',
+        message: `CONTRACT FAILED — CONVOY ${contract.quantumId.toUpperCase()} LOST`,
+      })
+      continue
+    }
+    if (q.location !== contract.destination) continue
+    company = { ...company, credits: company.credits + contract.pay }
+    active = active.filter((c) => c.id !== contract.id)
+    reputation = adjustReputation(reputation, contract.faction, REP_COMPLETED)
+    stats = {
+      ...stats,
+      contractsCompleted: stats.contractsCompleted + 1,
+      creditsEarned: stats.creditsEarned + contract.pay,
+    }
+    events.push({
+      tick,
+      kind: 'convoy-arrived',
+      message: `CONVOY ${q.id.toUpperCase()} ARRIVED SAFELY — ¤${contract.pay}`,
+    })
+  }
+
   // ── Contracts: hard deadlines ─────────────────────────────────────
   // Combat contracts with player units at the site are exempt — the
   // fight in progress decides them, not the clock.
@@ -237,7 +343,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     const playerUnits = units.filter((u) => u.side === 'player' && !unitDestroyed(u))
     const engagedIds = active
       .filter((c) => {
-        if (c.type === 'hauling') return false
+        if (c.type !== 'combat' && c.type !== 'security') return false
         const site =
           c.type === 'security' ? c.site : world.nodes[c.destination]?.position
         if (!site) return false
@@ -281,10 +387,34 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
 
   // ── Boards, hiring pools, dealer lots: refresh where docked ──────
   if (crawlerDock !== null && boardStale(boards[crawlerDock], tick)) {
-    boards = {
-      ...boards,
-      [crawlerDock]: generateBoard(crawlerDock, world, rng, tick, markets, reputation, units),
+    let board = generateBoard(
+      crawlerDock,
+      world,
+      rng,
+      tick,
+      markets,
+      reputation,
+      units,
+      wrecks,
+    )
+    // Escort charters mutate the world (shipment pre-bought, departure
+    // scheduled), so they merge in from their own generator.
+    const charters = generateEscortOffers(
+      crawlerDock,
+      world,
+      quanta,
+      markets,
+      units,
+      rng,
+      tick,
+      reputation,
+    )
+    if (charters.offers.length > 0) {
+      board = { ...board, contracts: [...board.contracts, ...charters.offers] }
+      quanta = charters.quanta
+      markets = charters.markets
     }
+    boards = { ...boards, [crawlerDock]: board }
   }
   if (crawlerDock !== null && hirePoolStale(hirePools[crawlerDock], tick)) {
     const node = world.nodes[crawlerDock]
@@ -295,22 +425,90 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   }
 
   // ── Quanta in transit (every tick — it's one progress add each) ──
-  quanta = moveQuanta(quanta, world.routes)
+  quanta = moveQuanta(quanta, world.routes, tick)
+
+  // ── Convoy war: materialize/dematerialize passing convoys ─────────
+  if (tick % CONVOY_THREAT_INTERVAL === 0) {
+    const escortedBands = new Map<string, string>()
+    for (const c of active) {
+      if (c.type === 'escort') escortedBands.set(c.quantumId, c.bandId)
+    }
+    const scan = scanConvoys(quanta, units, world.routes, tick, bandRaids, escortedBands)
+    quanta = scan.quanta
+    units = scan.units
+    bandRaids = scan.bandRaids
+    for (const raid of scan.attacked) {
+      events.push({
+        tick,
+        kind: 'convoy-attacked',
+        message: `RAIDERS SORTIE — CONVOY ${raid.quantumId.toUpperCase()} UNDER ATTACK`,
+      })
+    }
+    for (const id of scan.arrived) {
+      // Escorted arrivals are announced by escort resolution, with the payout.
+      if (escortedBands.has(id)) continue
+      events.push({
+        tick,
+        kind: 'convoy-arrived',
+        message: `CONVOY ${id.toUpperCase()} ARRIVED SAFELY`,
+      })
+    }
+  }
 
   // ── Economy step: production, pricing, quanta decisions ──────────
   if (tick % ECON_INTERVAL === 0) {
     const liveBands = liveBandIds(units)
+    const wreckIds = new Set(wrecks.map((w) => w.id))
+    const contractedWrecks = new Set(
+      active.filter((c) => c.type === 'salvage').map((c) => c.wreckId),
+    )
+    const quantaById = new Map(quanta.map((q) => [q.id, q]))
     const pruned: typeof boards = {}
     for (const [nodeId, board] of Object.entries(boards)) {
       const base = pruneBoard(board, tick)
-      // Drop patrol offers whose target band is already gone.
-      const kept = base.contracts.filter(
-        (c) => c.type !== 'security' || liveBands.has(c.bandId),
-      )
+      // Drop offers whose subject is gone: patrols on dead bands,
+      // escorts whose convoy departed/died or whose threat evaporated,
+      // salvage on vanished or already-contracted wrecks.
+      const kept = base.contracts.filter((c) => {
+        if (c.type === 'security') return liveBands.has(c.bandId)
+        if (c.type === 'escort') {
+          const q = quantaById.get(c.quantumId)
+          return (
+            q !== undefined &&
+            q.location === c.origin &&
+            q.holdUntilTick !== undefined &&
+            liveBands.has(c.bandId)
+          )
+        }
+        if (c.type === 'salvage') {
+          return wreckIds.has(c.wreckId) && !contractedWrecks.has(c.wreckId)
+        }
+        return true
+      })
       pruned[nodeId] =
         kept.length === base.contracts.length ? base : { ...base, contracts: kept }
     }
     boards = pruned
+
+    // Cargo wrecks rust away unlooted — unless somebody holds the
+    // salvage contract on them.
+    const keptWrecks = wrecks.filter(
+      (w) =>
+        w.cargo.qty > 0 &&
+        (tick - w.createdTick <= WRECK_TTL_TICKS || contractedWrecks.has(w.id)),
+    )
+    if (keptWrecks.length !== wrecks.length) wrecks = keptWrecks
+
+    // The hauler population self-heals — predation is pressure on the
+    // markets, not a demographic collapse.
+    quanta = refillQuanta(quanta, Object.keys(world.nodes), QUANTA_COUNT, rng)
+
+    // Raid cooldown bookkeeping dies with its band.
+    if (Object.keys(bandRaids).some((id) => !liveBands.has(id))) {
+      bandRaids = Object.fromEntries(
+        Object.entries(bandRaids).filter(([id]) => liveBands.has(id)),
+      )
+    }
 
     // Battlefield decay: hostile wrecks nobody holds a contract on rust
     // away — without this, every uncontracted band kill grows units[]
@@ -425,6 +623,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       garage,
       crawlerDock,
       quanta,
+      wrecks,
+      bandRaids,
       pilots,
       hirePools,
       mechLots,
