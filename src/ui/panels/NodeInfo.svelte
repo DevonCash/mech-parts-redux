@@ -56,7 +56,7 @@
     const remainingKm = route.distance * route.terrain * remainingProgress;
     // Add remaining queued routes
     let totalKm = remainingKm;
-    for (const routeId of crawlerState.routeQueue) {
+    for (const [routeId] of crawlerState.routeQueue) {
       const r = routeMap[routeId];
       if (r) totalKm += r.distance * r.terrain;
     }

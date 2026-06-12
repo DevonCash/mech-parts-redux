@@ -1,6 +1,6 @@
 import type { Attachment } from "svelte/attachments";
 
-type CommandEvent = Event & {
+export type CommandEvent = Event & {
   command: string;
 };
 
@@ -44,10 +44,11 @@ export const parseCommandId = (id: string) => {
 };
 
 export const registerCommands =
-  (cmds: Record<string, Function>): Attachment =>
+  (cmds: Record<string, (event: CommandEvent) => void>): Attachment =>
   (el: Element) => {
-    const handleCmd = (event: CommandEvent) => {
-      cmds[event.command]?.(event);
+    const handleCmd = (event: Event) => {
+      const e = event as CommandEvent;
+      cmds[e.command]?.(e);
     };
     el.addEventListener("command", handleCmd);
 

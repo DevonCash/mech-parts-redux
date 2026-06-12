@@ -1,4 +1,5 @@
 /* eslint-disable */
+// @ts-nocheck — vendored bundle of @acalcutt/maplibre-contour-pmtiles
 
 var shared, worker, mlcontour;
 // define gets called three times: one for each chunk. we rely on the order

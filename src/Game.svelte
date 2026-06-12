@@ -152,8 +152,4 @@
     inset: 0;
     z-index: 0;
   }
-
-  dialog {
-    z-index: 1000;
-  }
 </style>
