@@ -15,6 +15,7 @@ import {
   REP_COMPLETED,
 } from '../sim/factions/models'
 import { spawnHostiles } from '../sim/combat/strategic'
+import { liveBandIds } from '../sim/raiders/bands'
 import { makeRng } from '../sim/rng'
 import { company } from './company'
 import { crawlerDock, units, type ActionResult } from './units'
@@ -50,7 +51,9 @@ export function acceptContract(contractId: string): ActionResult {
 
   // Hauling cargo is loaded on accept; combat contracts spawn their
   // garrison at the site; a security target band already lives on the
-  // map — accepting just takes the job.
+  // map — accepting just takes the job, so the band must still be
+  // standing and not already signed for (two boards can offer the same
+  // camp; one bounty per band).
   if (contract.type === 'hauling') {
     const c = company.get()
     if (cargoUsed(c) + contract.quantity > c.cargoCapacity) {
@@ -63,6 +66,13 @@ export function acceptContract(contractId: string): ActionResult {
     const rng = makeRng(rngState.get())
     units.set([...units.get(), ...spawnHostiles(contract, site.position, rng)])
     rngState.set(rng.state)
+  } else {
+    if (!liveBandIds(units.get()).has(contract.bandId)) {
+      return { ok: false, reason: 'BAND ALREADY DESTROYED' }
+    }
+    if (active.some((c) => c.type === 'security' && c.bandId === contract.bandId)) {
+      return { ok: false, reason: 'BAND ALREADY UNDER CONTRACT' }
+    }
   }
   activeContracts.set([...active, { ...contract, status: 'active' }])
   boards.set({

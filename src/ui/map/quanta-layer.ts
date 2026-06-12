@@ -9,8 +9,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import { quanta, routes } from '../../stores/world'
 import { crawlerUnit, units } from '../../stores/units'
 import { quantumPosition } from '../../sim/economy/quanta'
-import { marsDistance } from '../../sim/constants'
-import { SENSOR_RANGE_KM } from '../../sim/intel/models'
+import { withinSensorRange } from '../../sim/intel/models'
 
 const SOURCE_ID = 'quanta'
 const LAYER_ID = 'quanta-dots'
@@ -18,13 +17,11 @@ const LAYER_ID = 'quanta-dots'
 function quantaGeoJSON() {
   const routeMap = routes.get()
   const crawler = crawlerUnit()
-  const lat = crawler?.lat ?? 0
-  const lng = crawler?.lng ?? 0
   const features: any[] = []
   for (const q of quanta.get()) {
     const pos = quantumPosition(q, routeMap)
     if (!pos) continue
-    if (marsDistance(lat, lng, pos[0], pos[1]) > SENSOR_RANGE_KM) continue
+    if (!withinSensorRange(crawler, pos[0], pos[1])) continue
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [pos[1], pos[0]] },

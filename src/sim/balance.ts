@@ -104,6 +104,15 @@ export const TECHNICAL_LEASH_KM = 10
 /** The camp guard mech stays home */
 export const CAMP_MECH_LEASH_KM = 6
 
+/** Route danger floor when no camp threatens the road */
+export const RAIDER_DANGER_BASE = 0.05
+
+/** Danger added per camp within threat range of a route's path */
+export const RAIDER_CAMP_THREAT = 0.35
+
+/** A camp threatens road traffic within this of the path */
+export const RAIDER_CAMP_THREAT_KM = 30
+
 // ── Security contracts ──────────────────────────────────────────────
 
 /** Flat component of a patrol contract */
@@ -114,6 +123,9 @@ export const SECURITY_PAY_PER_RAIDER = 1200
 
 /** Bands within this of a node (or its roads) appear on its board */
 export const SECURITY_OFFER_RANGE_KM = 60
+
+/** Patrol deadline — generous, the target band doesn't move (~22 game-hours) */
+export const SECURITY_DEADLINE_TICKS = 800000
 
 // ── Recruitment & acquisition ───────────────────────────────────────
 

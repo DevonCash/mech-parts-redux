@@ -10,6 +10,9 @@
 import {
   RAIDER_BAND_SIZE_MAX,
   RAIDER_BAND_SIZE_MIN,
+  RAIDER_CAMP_THREAT,
+  RAIDER_CAMP_THREAT_KM,
+  RAIDER_DANGER_BASE,
   TECHNICAL_LEASH_KM,
   CAMP_MECH_LEASH_KM,
   CAMP_MECH_CHANCE,
@@ -111,21 +114,22 @@ export function liveCamps(units: Unit[]): [number, number][] {
   return camps
 }
 
-/** How threatened a route is by camps near its path. */
-const DANGER_BASE = 0.05
-const CAMP_THREAT_KM = 30
-const CAMP_THREAT = 0.35
-
-export function routeLiveDanger(route: Route, units: Unit[]): number {
-  const camps = liveCamps(units)
-  if (camps.length === 0) return DANGER_BASE
-  let danger = DANGER_BASE
+/**
+ * How threatened a route is by camps near its path. Callers iterating
+ * several routes should compute `liveCamps(units)` once and pass it.
+ */
+export function routeLiveDanger(
+  route: Route,
+  units: Unit[],
+  camps: [number, number][] = liveCamps(units),
+): number {
+  let danger = RAIDER_DANGER_BASE
   for (const camp of camps) {
     // Waypoints sit ~50 km apart — every one must be checked or a camp
     // can fall between samples. Only runs at board generation.
     for (const [lat, lng] of route.path) {
-      if (marsDistance(camp[0], camp[1], lat, lng) <= CAMP_THREAT_KM) {
-        danger += CAMP_THREAT
+      if (marsDistance(camp[0], camp[1], lat, lng) <= RAIDER_CAMP_THREAT_KM) {
+        danger += RAIDER_CAMP_THREAT
         break // one hit per camp
       }
     }

@@ -11,6 +11,7 @@
  * crawler-as-unit phase; this phase establishes the knowledge layer.
  */
 import { z } from 'zod'
+import { marsDistance } from '../constants'
 import { NodeMarketSchema } from '../economy/models'
 
 /** What the player knows about one node: a timestamped snapshot. */
@@ -24,6 +25,20 @@ export type IntelMap = Record<string, NodeIntel>
 
 /** Crawler sensor reach until sensors become components on the chassis. */
 export const SENSOR_RANGE_KM = 400
+
+/**
+ * The one definition of "the crawler can see this point" — every fog
+ * filter (units, convoys, sweeps) goes through here so sensor rules
+ * evolve in one place.
+ */
+export function withinSensorRange(
+  observer: { lat: number; lng: number } | undefined,
+  lat: number,
+  lng: number,
+): boolean {
+  if (!observer) return false
+  return marsDistance(observer.lat, observer.lng, lat, lng) <= SENSOR_RANGE_KM
+}
 
 /** Ticks between passive sensor sweeps (5 game-seconds). */
 export const OBSERVE_INTERVAL = 50

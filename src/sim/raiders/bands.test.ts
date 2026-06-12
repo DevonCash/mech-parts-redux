@@ -18,24 +18,11 @@ import {
   spawnBand,
   type WorldLike,
 } from './bands'
-import type { Unit } from '../combat/models'
+import { wreckUnit as wreck } from '../combat/test-helpers'
 
 const world: WorldLike = {
   nodes: Object.fromEntries(seedNodes.map((n) => [n.id, n])),
   routes: Object.fromEntries(generateSeedRoutes(seedNodes).map((r) => [r.id, r])),
-}
-
-/** Reduce every component on a unit to scrap. */
-function wreck(u: Unit): Unit {
-  return {
-    ...u,
-    components: Object.fromEntries(
-      Object.entries(u.components).map(([loc, stack]) => [
-        loc,
-        stack.map((c) => ({ ...c, hp: 0 })),
-      ]),
-    ),
-  }
 }
 
 describe('pickCampSite', () => {

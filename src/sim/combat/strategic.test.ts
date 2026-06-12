@@ -12,6 +12,7 @@ import {
   spawnHostiles,
 } from './strategic'
 import { spawnBand } from '../raiders/bands'
+import { wreckUnit } from './test-helpers'
 import { marsDistance } from '../constants'
 import { TECHNICAL_LEASH_KM } from '../balance'
 import { startingPilots } from '../pilots/models'
@@ -302,15 +303,7 @@ describe('rollSalvage', () => {
     const garrison = spawnHostiles(combatContract(2), [0, 0], makeRng(1))
     expect(rollSalvage(garrison, makeRng(1))).toEqual({ metal: 0, precision: 0 })
 
-    const wrecks = garrison.map((u) => ({
-      ...u,
-      components: Object.fromEntries(
-        Object.entries(u.components).map(([loc, stack]) => [
-          loc,
-          stack.map((c) => ({ ...c, hp: 0 })),
-        ]),
-      ),
-    }))
+    const wrecks = garrison.map(wreckUnit)
     const salvage = rollSalvage(wrecks, makeRng(1))
     expect(salvage.metal).toBeGreaterThanOrEqual(8)
   })

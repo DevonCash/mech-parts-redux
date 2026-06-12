@@ -30,12 +30,23 @@ export interface EndCheckInput {
   markets: Record<string, NodeMarket>
   routes: Record<string, Route>
   active: Contract[]
+  /** A deployable mech exists — fightable contracts are real income */
+  canFight: boolean
   creditTarget: number
 }
 
 export function checkEndConditions(input: EndCheckInput): EndState | null {
-  const { tick, crawler, crawlerDock, company, markets, routes, active, creditTarget } =
-    input
+  const {
+    tick,
+    crawler,
+    crawlerDock,
+    company,
+    markets,
+    routes,
+    active,
+    canFight,
+    creditTarget,
+  } = input
 
   if (!crawler || unitDestroyed(crawler)) {
     return { kind: 'destroyed', tick }
@@ -58,13 +69,16 @@ export function checkEndConditions(input: EndCheckInput): EndState | null {
     const market = markets[crawlerDock]
     if (!market) return null
 
-    // A deliverable (or fightable) contract here means income is one
-    // click away.
+    // A deliverable (or genuinely fightable) contract means income is
+    // within reach. Fightable requires a deployable mech — mechs walk
+    // fuel-free, so the crawler being dry doesn't bar that income, but
+    // a wrecked or pilotless garage does.
     const deliverableHere = active.some(
       (c) =>
-        c.type !== 'hauling' ||
-        (c.destination === crawlerDock &&
-          (company.cargo[c.commodity] ?? 0) >= c.quantity),
+        c.type !== 'hauling'
+          ? canFight
+          : c.destination === crawlerDock &&
+            (company.cargo[c.commodity] ?? 0) >= c.quantity,
     )
     if (deliverableHere) return null
 

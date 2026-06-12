@@ -312,6 +312,22 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
     boards = pruned
 
+    // Battlefield decay: hostile wrecks nobody holds a contract on rust
+    // away — without this, every uncontracted band kill grows units[]
+    // forever. Wrecks of live or contracted bands stay (salvage rolls
+    // off them at contract completion).
+    const securityBands = new Set(
+      active.filter((c) => c.type === 'security').map((c) => c.bandId),
+    )
+    const combatIds = new Set(active.filter((c) => c.type === 'combat').map((c) => c.id))
+    const decayed = units.filter((u) => {
+      if (u.side !== 'hostile' || !unitDestroyed(u)) return true
+      if (u.contractId && combatIds.has(u.contractId)) return true
+      if (u.bandId && (liveBands.has(u.bandId) || securityBands.has(u.bandId))) return true
+      return false
+    })
+    if (decayed.length !== units.length) units = decayed
+
     markets = econStep(world.nodes, markets, rng)
     const result = quantaDecisions(quanta, markets, world.routes, rng)
     quanta = result.quanta
@@ -323,11 +339,9 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       const rate = crawlerDock !== null ? STRESS_RECOVERY_DOCKED : STRESS_RECOVERY_FIELD
       pilots = pilots.map((p) => recoverStress(p, rate))
     }
-  }
 
-  // ── Raider band maintenance: the world never pacifies ────────────
-  if (tick % ECON_INTERVAL === 0 && tick >= raiderRespawnAt) {
-    if (liveBandIds(units).size < RAIDER_BAND_TARGET) {
+    // Raider band maintenance: the world never pacifies.
+    if (tick >= raiderRespawnAt && liveBands.size < RAIDER_BAND_TARGET) {
       const camp = pickCampSite(world, rng)
       units = [...units, ...spawnBand(raiderSerial, camp, rng)]
       raiderSerial = raiderSerial + 1
@@ -364,6 +378,13 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     company.credits >= state.params.creditTarget ||
     (crawlerNow?.order.kind === 'move' && company.fuel <= 0)
   if (cheapCheck || (crawlerDock !== null && tick % END_CHECK_INTERVAL === 0)) {
+    const canFight =
+      units.some(
+        (u) => u.side === 'player' && u.id !== CRAWLER_UNIT_ID && !unitDestroyed(u),
+      ) ||
+      garage.some(
+        (u) => !unitDestroyed(u) && u.pilotId && pilots.some((p) => p.id === u.pilotId),
+      )
     endState = checkEndConditions({
       tick,
       crawler: crawlerNow,
@@ -372,6 +393,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       markets,
       routes: world.routes,
       active,
+      canFight,
       creditTarget: state.params.creditTarget,
     })
     if (endState) {

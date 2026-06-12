@@ -14,8 +14,7 @@ import { moveCrawlerTo } from '../../stores/travel'
 import { CRAWLER_UNIT_ID } from '../../sim/combat/catalog'
 import { unitDestroyed } from '../../sim/combat/damage'
 import type { Unit } from '../../sim/combat/models'
-import { SENSOR_RANGE_KM } from '../../sim/intel/models'
-import { marsDistance } from '../../sim/constants'
+import { withinSensorRange } from '../../sim/intel/models'
 
 const SOURCE_ID = 'units'
 const ORDER_SOURCE_ID = 'unit-orders'
@@ -33,11 +32,8 @@ type FC = { type: 'FeatureCollection'; features: any[] }
  */
 function visibleUnits(all: Unit[]): Unit[] {
   const crawler = all.find((u) => u.id === CRAWLER_UNIT_ID)
-  if (!crawler) return all.filter((u) => u.side === 'player')
   return all.filter(
-    (u) =>
-      u.side === 'player' ||
-      marsDistance(u.lat, u.lng, crawler.lat, crawler.lng) <= SENSOR_RANGE_KM,
+    (u) => u.side === 'player' || withinSensorRange(crawler, u.lat, u.lng),
   )
 }
 

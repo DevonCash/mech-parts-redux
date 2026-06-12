@@ -18,6 +18,7 @@ import {
   HARD_DEADLINE_BONUS,
   HAUL_PAY_BASE,
   HAUL_PAY_PER_KM,
+  SECURITY_DEADLINE_TICKS,
   SECURITY_OFFER_RANGE_KM,
   SECURITY_PAY_BASE,
   SECURITY_PAY_PER_RAIDER,
@@ -36,7 +37,7 @@ import {
   payModifier,
   type Reputation,
 } from '../factions/models'
-import { bandsNearNode, routeLiveDanger } from '../raiders/bands'
+import { bandsNearNode, liveCamps, routeLiveDanger } from '../raiders/bands'
 import { findPath } from '../h3/graph'
 import type { Unit } from '../combat/models'
 import { TICK_DURATION_MS } from '../tick'
@@ -64,13 +65,14 @@ export function routeMetrics(
   const segments = findPath(fromId, toId, world.routes, positions)
   if (!segments || segments.length === 0) return null
 
+  const camps = liveCamps(units)
   let effectiveKm = 0
   let dangerSum = 0
   for (const seg of segments) {
     const route = world.routes[seg.routeId]
     effectiveKm += route.distance * route.terrain
     // Live danger: how raider-camped the road actually is right now.
-    dangerSum += routeLiveDanger(route, units)
+    dangerSum += routeLiveDanger(route, units, camps)
   }
   return { effectiveKm, meanDanger: dangerSum / segments.length }
 }
@@ -120,7 +122,7 @@ export function generateBoard(
       faction,
       pay,
       postedTick: currentTick,
-      deadlineTick: currentTick + 800000, // generous — bands don't move
+      deadlineTick: currentTick + SECURITY_DEADLINE_TICKS,
       boardExpiryTick: currentTick + CONTRACT_BOARD_TTL,
       status: 'available',
     })

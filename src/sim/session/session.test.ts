@@ -10,6 +10,7 @@ import { travelTicks, routeMetrics } from '../contracts/generate'
 import { buildRoadMoveOrder } from '../combat/orders'
 import { spawnHostiles } from '../combat/strategic'
 import { unitDestroyed } from '../combat/damage'
+import { wreckUnit } from '../combat/test-helpers'
 import { CRAWLER_UNIT_ID } from '../combat/catalog'
 import { makeRng } from '../rng'
 import { EMERGENCY_RESUPPLY_COST, RAIDER_BAND_TARGET, RAIDER_RESPAWN_TICKS, ECON_INTERVAL } from '../balance'
@@ -79,6 +80,13 @@ function endCheckInput(s: SessionState) {
     markets: s.markets,
     routes: world.routes,
     active: s.active,
+    canFight:
+      s.units.some(
+        (u) => u.side === 'player' && u.id !== CRAWLER_UNIT_ID && !unitDestroyed(u),
+      ) ||
+      s.garage.some(
+        (u) => !unitDestroyed(u) && u.pilotId && s.pilots.some((p) => p.id === u.pilotId),
+      ),
     creditTarget: s.params.creditTarget,
   }
 }
@@ -200,6 +208,37 @@ describe('checkEndConditions', () => {
       company: { ...s.company, fuel: 0, credits: 0, cargo: {} },
     }
     expect(checkEndConditions(endCheckInput(destitute))?.kind).toBe('bankrupt')
+  })
+
+  it('a fightable contract defers bankruptcy only while a mech can deploy', () => {
+    let s = createSession(1, world)
+    const target = [...liveBandIds(s.units)][0]
+    const band = s.units.filter((u) => u.bandId === target)
+    const patrol: SecurityContract = {
+      id: 'sec-bk',
+      type: 'security',
+      origin: START_NODE,
+      destination: START_NODE,
+      bandId: target,
+      hostiles: band.length,
+      site: band[0].spawn!,
+      faction: 'settler',
+      pay: 4000,
+      postedTick: 0,
+      deadlineTick: null,
+      boardExpiryTick: 999999,
+      status: 'active',
+    }
+    s = {
+      ...s,
+      active: [patrol],
+      company: { ...s.company, fuel: 0, credits: 0, cargo: {} },
+    }
+    // Lance intact: the patrol is real income — not bankrupt.
+    expect(checkEndConditions(endCheckInput(s))).toBeNull()
+    // Garage emptied (mechs lost): the patrol is unreachable — bankrupt.
+    const ruined = { ...s, garage: [] }
+    expect(checkEndConditions(endCheckInput(ruined))?.kind).toBe('bankrupt')
   })
 
   it('reports destroyed when the crawler unit is gone', () => {
@@ -325,19 +364,6 @@ describe('strategic combat through the pipeline', () => {
 })
 
 describe('raider bands through the pipeline', () => {
-  /** Reduce every component on a unit to scrap. */
-  function wreckUnit(u: SessionState['units'][number]) {
-    return {
-      ...u,
-      components: Object.fromEntries(
-        Object.entries(u.components).map(([loc, stack]) => [
-          loc,
-          stack.map((c) => ({ ...c, hp: 0 })),
-        ]),
-      ),
-    }
-  }
-
   it('respawns bands on the econ cadence back up to the target', () => {
     let s = createSession(1, world)
     const gone = [...liveBandIds(s.units)][0]
@@ -385,6 +411,53 @@ describe('raider bands through the pipeline', () => {
     expect(r.state.active).toHaveLength(0)
     expect(r.state.units.some((u) => u.bandId === target)).toBe(false)
     expect(r.state.stats.contractsCompleted).toBe(1)
+  })
+
+  it('wrecks of an uncontracted dead band decay on the econ cadence', () => {
+    let s = createSession(1, world)
+    const target = [...liveBandIds(s.units)][0]
+    // Kill the band with no contract on it — wrecks must not pile up
+    // forever (a replacement band will spawn on the respawn cadence).
+    s = {
+      ...s,
+      units: s.units.map((u) => (u.bandId === target ? wreckUnit(u) : u)),
+    }
+    expect(s.units.some((u) => u.bandId === target)).toBe(true)
+    s = runTicks(s, ECON_INTERVAL + 1)
+    expect(s.units.some((u) => u.bandId === target)).toBe(false)
+  })
+
+  it('wrecks of a band under an active security contract persist for salvage', () => {
+    let s = createSession(1, world)
+    const target = [...liveBandIds(s.units)][0]
+    const band = s.units.filter((u) => u.bandId === target)
+    const contract: SecurityContract = {
+      id: 'sec-keep',
+      type: 'security',
+      origin: START_NODE,
+      destination: START_NODE,
+      bandId: target,
+      hostiles: band.length,
+      site: band[0].spawn!,
+      faction: 'settler',
+      pay: 4000,
+      postedTick: 0,
+      deadlineTick: null,
+      boardExpiryTick: 999999,
+      status: 'active',
+    }
+    // Wreck all but one so the contract stays open mid-fight.
+    const survivor = band[band.length - 1].id
+    s = {
+      ...s,
+      active: [contract],
+      units: s.units.map((u) =>
+        u.bandId === target && u.id !== survivor ? wreckUnit(u) : u,
+      ),
+    }
+    s = runTicks(s, ECON_INTERVAL + 1)
+    // Mid-contract wrecks survived decay — they are the salvage.
+    expect(s.units.filter((u) => u.bandId === target).length).toBe(band.length)
   })
 
   it('a docked crawler far from any camp is unmolested — no dice, only units', () => {
