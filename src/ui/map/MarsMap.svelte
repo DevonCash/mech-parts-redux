@@ -607,7 +607,8 @@
   .degraded-badge {
     position: absolute;
     bottom: 16px;
-    left: 16px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 100;
     background: rgba(20, 20, 20, 0.85);
     border: 1px solid rgba(208, 192, 64, 0.4);
