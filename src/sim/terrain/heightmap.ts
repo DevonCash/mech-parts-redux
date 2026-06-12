@@ -18,7 +18,7 @@ import {
   TERRAIN_ROUGHNESS_FULL_M,
   TERRAIN_SEED,
 } from '../balance'
-import { marsDistance } from '../constants'
+import { KM_PER_DEG, marsDistance } from '../constants'
 
 // ── Seeded 3D value noise ───────────────────────────────────────────
 
@@ -136,7 +136,6 @@ export function marsElevation(lat: number, lng: number): number {
 /** Sample spacing for local relief — the scale a road winds through
  *  (finer rings only see the last noise octave and flatten the band). */
 const ROUGHNESS_RING_KM = 40
-const KM_PER_DEG = 59.2
 
 /**
  * Mean absolute relief (m) around a point — how much the ground rises

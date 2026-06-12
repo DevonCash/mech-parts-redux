@@ -22,6 +22,7 @@ import { unitDestroyed } from '../combat/damage'
 import type { Unit } from '../combat/models'
 import { KM_PER_DEG, marsDistance } from '../constants'
 import { interpolateRoutePath } from '../crawler/movement'
+import { liveBandCamps } from '../raiders/bands'
 import { Commodity, type Quantum, type Route } from './models'
 
 export const CargoWreckSchema = z.object({
@@ -122,22 +123,6 @@ export function haulerProgress(unit: Unit, q: Quantum, route: Route): number {
   return Math.min(1, Math.max(0, (segIndex + frac) / totalSegments))
 }
 
-interface BandCamp {
-  bandId: string
-  camp: [number, number]
-}
-
-function livingBandCamps(units: Unit[]): BandCamp[] {
-  const seen = new Set<string>()
-  const camps: BandCamp[] = []
-  for (const u of units) {
-    if (!u.bandId || !u.spawn || unitDestroyed(u) || seen.has(u.bandId)) continue
-    seen.add(u.bandId)
-    camps.push({ bandId: u.bandId, camp: u.spawn })
-  }
-  return camps
-}
-
 function near(
   lat: number,
   lng: number,
@@ -173,7 +158,7 @@ export function scanConvoys(
   bandRaids: Record<string, number>,
   escortedBands: Map<string, string>,
 ): ConvoyScanResult {
-  const camps = livingBandCamps(units)
+  const camps = liveBandCamps(units)
   const players = units.filter((u) => u.side === 'player' && !unitDestroyed(u))
   const unitById = new Map(units.map((u) => [u.id, u]))
 

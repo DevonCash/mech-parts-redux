@@ -104,7 +104,6 @@
       const data = await checkMapData();
       if (disposed) return;
       synthetic = !data.terrain;
-      degraded = false;
       geologyAvailable = data.geology;
 
       const sources: Record<string, maplibregl.SourceSpecification> = {};

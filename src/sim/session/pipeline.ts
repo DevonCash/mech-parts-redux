@@ -248,7 +248,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
 
     // One wreck is sometimes towable — it joins the garage as-is,
     // dead components and all, needing real repairs before it fights.
-    let wrecks = tagged
+    let mechWrecks = tagged
     if (rng.next() < SALVAGE_MECH_CHANCE && tagged.length > 0) {
       const prize = tagged[0]
       const recovered: Unit = {
@@ -263,7 +263,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         spawn: undefined,
       }
       garage = [...garage, recovered]
-      wrecks = tagged.slice(1)
+      mechWrecks = tagged.slice(1)
       events.push({
         tick,
         kind: 'salvage-recovered',
@@ -271,7 +271,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       })
     }
 
-    const salvage = rollSalvage(wrecks, rng)
+    const salvage = rollSalvage(mechWrecks, rng)
     let cargo = company.cargo
     const space = company.cargoCapacity - cargoUsed(company)
     const metal = Math.min(salvage.metal, space)
@@ -442,6 +442,15 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         tick,
         kind: 'convoy-attacked',
         message: `RAIDERS SORTIE — CONVOY ${raid.quantumId.toUpperCase()} UNDER ATTACK`,
+      })
+    }
+    for (const id of scan.arrived) {
+      // Escorted arrivals are announced by escort resolution, with the payout.
+      if (escortedBands.has(id)) continue
+      events.push({
+        tick,
+        kind: 'convoy-arrived',
+        message: `CONVOY ${id.toUpperCase()} ARRIVED SAFELY`,
       })
     }
   }

@@ -143,10 +143,9 @@
                 {convoyStatus(contract)}
               </span>
             {:else if contract.type === "salvage"}
+              {@const wreck = wreckOf(contract)}
               <span class="deadline">
-                {wreckOf(contract)
-                  ? `${wreckOf(contract)?.cargo.qty} AT SITE`
-                  : "SITE STRIPPED"}
+                {wreck ? `${wreck.cargo.qty} AT SITE` : "SITE STRIPPED"}
               </span>
             {:else if contract.deadlineTick !== null}
               <span class="deadline {urgency(contract.deadlineTick)}">
