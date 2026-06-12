@@ -11,6 +11,8 @@
   import ContractBoard from "./ui/panels/ContractBoard.svelte";
   import Market from "./ui/panels/Market.svelte";
   import ActiveContracts from "./ui/panels/ActiveContracts.svelte";
+  import Forces from "./ui/panels/Forces.svelte";
+  import UnitStatus from "./ui/panels/UnitStatus.svelte";
 
   import { handleKeydown } from "./keybinds";
   import { createStepper } from "./sim/tick";
@@ -110,8 +112,11 @@
       <div class="dock-panel"><ContractBoard /></div>
     {:else if panel === "market"}
       <div class="dock-panel"><Market /></div>
+    {:else if panel === "forces"}
+      <div class="dock-panel"><Forces /></div>
     {/if}
 
+    <UnitStatus />
     <StrandedBanner />
     <EventFeed />
   </main>

@@ -19,9 +19,11 @@ import { markets } from './market'
 import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
 import { nodes, routes } from './world'
-import { sessionStats } from './session-stats'
+import { forces } from './forces'
+import { engagement } from './combat'
+import { rngState, sessionStats } from './session-stats'
 
-export { sessionStats }
+export { rngState, sessionStats }
 
 export const sessionParams = atom<SessionParams>({
   seed: 0,
@@ -30,8 +32,6 @@ export const sessionParams = atom<SessionParams>({
 })
 
 export const endState = atom<EndState | null>(null)
-
-export const rngState = atom<number>(0)
 
 export function getWorld(): WorldStatic {
   return { nodes: nodes.get(), routes: routes.get() }
@@ -47,6 +47,8 @@ export function gatherSessionState(): SessionState {
     markets: markets.get(),
     boards: boards.get(),
     active: activeContracts.get(),
+    forces: forces.get(),
+    engagement: engagement.get(),
     params: sessionParams.get(),
     stats: sessionStats.get(),
     endState: endState.get(),
@@ -63,6 +65,8 @@ export function applySessionState(state: SessionState): void {
   markets.set(state.markets)
   boards.set(state.boards)
   activeContracts.set(state.active)
+  forces.set(state.forces)
+  engagement.set(state.engagement)
   sessionParams.set(state.params)
   sessionStats.set(state.stats)
   endState.set(state.endState)

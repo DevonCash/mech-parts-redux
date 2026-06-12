@@ -4,6 +4,7 @@
     deliverContract,
     abandonContract,
   } from "../../stores/contracts";
+  import { deploy, engagement } from "../../stores/combat";
   import { crawler } from "../../stores/crawler";
   import { nodes } from "../../stores/world";
   import { tick } from "../../stores/time";
@@ -16,6 +17,7 @@
   let nodeMap = $state(nodes.get());
   let currentTick = $state(tick.get());
   let companyState = $state(company.get());
+  let eng = $state(engagement.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
@@ -25,9 +27,15 @@
       nodes.subscribe((v) => (nodeMap = v)),
       tick.subscribe((v) => (currentTick = v)),
       company.subscribe((v) => (companyState = v)),
+      engagement.subscribe((v) => (eng = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
+
+  function handleDeploy(id: string) {
+    const result = deploy(id);
+    lastError = result.ok ? null : result.reason;
+  }
 
   function nodeName(id: string): string {
     return nodeMap[id]?.name?.toUpperCase() ?? id.toUpperCase();
@@ -57,13 +65,21 @@
     <div class="header">ACTIVE CONTRACTS</div>
     <ul>
       {#each active as contract (contract.id)}
+        {@const atSite = crawlerState.currentNode === contract.destination}
         {@const canDeliver =
-          crawlerState.currentNode === contract.destination &&
-          (companyState.cargo[contract.commodity] ?? 0) >= contract.quantity}
+          contract.type === "hauling" &&
+          atSite &&
+          (companyState.cargo[contract.commodity ?? "metal"] ?? 0) >= (contract.quantity ?? 0)}
+        {@const canDeploy = contract.type === "combat" && atSite && !eng}
         <li>
           <div class="row">
-            <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
-            <span class="arrow">→</span>
+            {#if contract.type === "combat"}
+              <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
+              <span class="arrow">@</span>
+            {:else}
+              <span class="cargo">{contract.quantity} {contract.commodity?.toUpperCase()}</span>
+              <span class="arrow">→</span>
+            {/if}
             <span class="dest">{nodeName(contract.destination)}</span>
             <span class="pay">¤{formatCredits(contract.pay)}</span>
           </div>
@@ -79,6 +95,10 @@
             {/if}
             {#if canDeliver}
               <button class="deliver" onclick={() => deliver(contract.id)}>DELIVER</button>
+            {:else if canDeploy}
+              <button class="deliver" onclick={() => handleDeploy(contract.id)}>DEPLOY</button>
+            {:else if contract.type === "combat" && eng?.contractId === contract.id}
+              <span class="deadline red">ENGAGED</span>
             {:else}
               <button class="abandon" onclick={() => abandon(contract.id)}>ABANDON</button>
             {/if}
@@ -140,6 +160,10 @@
   .cargo {
     color: rgba(255, 255, 255, 0.9);
     font-size: 10px;
+  }
+
+  .cargo.combat {
+    color: #ff5050;
   }
 
   .arrow {

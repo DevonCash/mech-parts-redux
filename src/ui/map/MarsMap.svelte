@@ -7,14 +7,18 @@
   import { addRouteLayer } from "./route-layer";
   import { addNodeLayer } from "./node-layer";
   import { addCrawlerLayer } from "./crawler-layer";
+  import { addUnitLayer } from "./unit-layer";
   import { checkMapData } from "./data-availability";
   import { buildGraticule } from "./graticule";
+  import { engagement } from "../../stores/combat";
 
   let mapContainer: HTMLDivElement;
   let map: maplibregl.Map | undefined;
   let cleanupRoutes: (() => void) | undefined;
   let cleanupNodes: (() => void) | undefined;
   let cleanupCrawler: (() => void) | undefined;
+  let cleanupUnits: (() => void) | undefined;
+  let cleanupEngagementCamera: (() => void) | undefined;
   let loading = $state(true);
   let degraded = $state(false);
   let geologyAvailable = $state(false);
@@ -419,6 +423,18 @@
         cleanupRoutes = addRouteLayer(m);
         cleanupNodes = addNodeLayer(m);
         cleanupCrawler = addCrawlerLayer(m);
+        cleanupUnits = addUnitLayer(m);
+
+        // Fly to the battle when an engagement starts — units sit within
+        // ~1.5 km of the site and are invisible at strategic zoom.
+        let hadEngagement = engagement.get() !== null;
+        cleanupEngagementCamera = engagement.subscribe((eng) => {
+          if (eng && !hadEngagement) {
+            const first = eng.units[0];
+            if (first) m.flyTo({ center: [first.lng, first.lat], zoom: 11.5, duration: 1500 });
+          }
+          hadEngagement = eng !== null;
+        });
 
         loading = false;
       });
@@ -435,6 +451,8 @@
 
     return () => {
       disposed = true;
+      cleanupEngagementCamera?.();
+      cleanupUnits?.();
       cleanupCrawler?.();
       cleanupNodes?.();
       cleanupRoutes?.();

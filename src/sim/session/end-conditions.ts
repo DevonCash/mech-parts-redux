@@ -48,11 +48,15 @@ export function checkEndConditions(input: EndCheckInput): EndState | null {
     const market = markets[crawler.currentNode]
     if (!market) return null
 
-    // A deliverable contract here means income is one click away.
+    // A deliverable (or fightable) contract here means income is one
+    // click away.
     const deliverableHere = active.some(
       (c) =>
         c.destination === crawler.currentNode &&
-        (company.cargo[c.commodity] ?? 0) >= c.quantity,
+        (c.type === 'combat' ||
+          (c.commodity !== undefined &&
+            c.quantity !== undefined &&
+            (company.cargo[c.commodity] ?? 0) >= c.quantity)),
     )
     if (deliverableHere) return null
 

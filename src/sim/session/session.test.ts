@@ -7,6 +7,8 @@ import { advanceTick, FUEL_BURN_PER_TICK } from './pipeline'
 import { checkEndConditions } from './end-conditions'
 import { decodeSave, encodeSave } from '../save/schema'
 import { travelTicks, routeMetrics } from '../contracts/generate'
+import { createEngagement } from '../combat/engagement'
+import { makeRng } from '../rng'
 import { EMERGENCY_RESUPPLY_COST } from '../balance'
 import type { SessionState } from './state'
 
@@ -213,6 +215,66 @@ describe('save round-trip', () => {
     expect(decodeSave('{}')).toBeNull()
     expect(decodeSave(JSON.stringify({ version: 99, state: {} }))).toBeNull()
   })
+})
+
+describe('engagement through the pipeline', () => {
+  it('a won engagement completes the contract: pay, salvage, mech damage persists', () => {
+    let s = createSession(3, world)
+    const contract = {
+      id: 'combat-test',
+      type: 'combat' as const,
+      origin: START_NODE,
+      destination: START_NODE,
+      hostiles: 2,
+      pay: 5000,
+      postedTick: 0,
+      deadlineTick: null,
+      boardExpiryTick: 999999,
+      status: 'active' as const,
+    }
+    s = { ...s, active: [contract] }
+
+    // Deploy at the docked node (what the store's deploy action does).
+    const rng = makeRng(s.rngState)
+    const node = world.nodes[START_NODE]
+    s = {
+      ...s,
+      engagement: createEngagement(
+        contract.id,
+        START_NODE,
+        node.position,
+        s.forces,
+        contract.hostiles,
+        rng,
+        s.tick,
+      ),
+      rngState: rng.state,
+    }
+
+    const creditsBefore = s.company.credits
+    let won = false
+    for (let i = 0; i < 80000 && s.engagement !== null; i++) {
+      const r = advanceTick(s, world)
+      s = r.state
+      if (r.events.some((e) => e.kind === 'engagement-won')) won = true
+      if (r.events.some((e) => e.kind === 'engagement-lost')) break
+    }
+
+    expect(s.engagement).toBeNull()
+    if (won) {
+      expect(s.company.credits).toBe(creditsBefore + contract.pay)
+      expect(s.active).toHaveLength(0)
+      expect(s.stats.contractsCompleted).toBe(1)
+      // Salvage landed in the hold
+      expect((s.company.cargo.metal ?? 0)).toBeGreaterThan(0)
+    } else {
+      // Loss is also a valid decisive outcome — contract failed.
+      expect(s.active).toHaveLength(0)
+      expect(s.stats.contractsFailed).toBe(1)
+    }
+    // Either way the roster only contains survivors with persistent damage.
+    expect(s.forces.length).toBeLessThanOrEqual(2)
+  }, 30000)
 })
 
 describe('route metrics sanity', () => {

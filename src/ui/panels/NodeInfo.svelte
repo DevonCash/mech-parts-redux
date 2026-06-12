@@ -122,6 +122,7 @@
       <div class="dock-actions">
         <button class="action dock" onclick={() => togglePanel("contracts")}>CONTRACTS</button>
         <button class="action dock" onclick={() => togglePanel("market")}>TRADE</button>
+        <button class="action dock" onclick={() => togglePanel("forces")}>FORCES</button>
       </div>
     {/if}
 

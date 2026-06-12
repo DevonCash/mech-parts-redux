@@ -10,6 +10,7 @@ import {
 } from '../balance'
 import { seedMarkets } from '../economy/seed-market'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
+import { startingForces } from '../combat/catalog'
 import { makeRng } from '../rng'
 import { emptyStats, type SessionState } from './state'
 
@@ -45,6 +46,8 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     markets,
     boards: {},
     active: [],
+    forces: startingForces(),
+    engagement: null,
     params: {
       seed,
       startCredits: START_CREDITS,

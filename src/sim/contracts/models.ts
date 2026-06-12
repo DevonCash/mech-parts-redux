@@ -1,13 +1,13 @@
 /**
- * Contract data models — Phase 1 covers hauling only.
+ * Contract data models.
  *
- * Security/combat types arrive with the combat slice; the schema keeps
- * the type field an enum so they slot in without a migration.
+ * Hauling: move commodity cargo origin → destination.
+ * Combat: clear hostiles at the destination node (deploy mechs there).
  */
 import { z } from 'zod'
 import { Commodity } from '../economy/models'
 
-export const ContractType = z.enum(['hauling'])
+export const ContractType = z.enum(['hauling', 'combat'])
 export type ContractType = z.infer<typeof ContractType>
 
 export const ContractStatus = z.enum([
@@ -22,12 +22,15 @@ export type ContractStatus = z.infer<typeof ContractStatus>
 export const ContractSchema = z.object({
   id: z.string(),
   type: ContractType,
-  /** Node where the cargo is loaded — boards only post local pickups */
+  /** Node where the contract is posted — boards only post local work */
   origin: z.string(),
-  /** Node where the cargo is due */
+  /** Hauling: where the cargo is due. Combat: the site to clear. */
   destination: z.string(),
-  commodity: Commodity,
-  quantity: z.number(),
+  /** Hauling only */
+  commodity: Commodity.optional(),
+  quantity: z.number().optional(),
+  /** Combat only — number of hostile units at the site */
+  hostiles: z.number().optional(),
   pay: z.number(),
   postedTick: z.number(),
   /** Hard deadline tick; null = soft expiry (never auto-fails once active) */

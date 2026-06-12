@@ -48,6 +48,9 @@ export function deliverContract(
   company: CompanyState,
   contract: Contract,
 ): DeliveryResult {
+  if (contract.type !== 'hauling' || !contract.commodity || !contract.quantity) {
+    return { ok: false, reason: 'NOT A DELIVERY CONTRACT' }
+  }
   const held = company.cargo[contract.commodity as Commodity] ?? 0
   if (held < contract.quantity) {
     return {
@@ -75,6 +78,9 @@ export function abandonContract(
   company: CompanyState,
   contract: Contract,
 ): { company: CompanyState; contract: Contract } {
+  if (contract.type !== 'hauling' || !contract.commodity || !contract.quantity) {
+    return { company, contract: { ...contract, status: 'failed' } }
+  }
   const held = company.cargo[contract.commodity as Commodity] ?? 0
   const confiscated = Math.min(held, contract.quantity)
   return {

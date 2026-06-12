@@ -8,9 +8,10 @@
 import { z } from 'zod'
 import { Commodity, NodeMarketSchema } from '../economy/models'
 import { BoardSchema, ContractSchema } from '../contracts/models'
+import { EngagementSchema, UnitSchema } from '../combat/models'
 import type { SessionState } from '../session/state'
 
-export const SAVE_VERSION = 1 as const
+export const SAVE_VERSION = 2 as const
 
 const CrawlerStateSchema = z.object({
   lat: z.number(),
@@ -57,6 +58,8 @@ export const SessionStateSchema = z.object({
   markets: z.record(z.string(), NodeMarketSchema),
   boards: z.record(z.string(), BoardSchema),
   active: z.array(ContractSchema),
+  forces: z.array(UnitSchema),
+  engagement: EngagementSchema.nullable(),
   params: SessionParamsSchema,
   stats: SessionStatsSchema,
   endState: EndStateSchema.nullable(),

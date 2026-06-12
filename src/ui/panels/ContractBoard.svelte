@@ -56,8 +56,13 @@
       {#each contracts as contract (contract.id)}
         <li class="contract">
           <div class="row main">
-            <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
-            <span class="arrow">→</span>
+            {#if contract.type === "combat"}
+              <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
+              <span class="arrow">@</span>
+            {:else}
+              <span class="cargo">{contract.quantity} {contract.commodity?.toUpperCase()}</span>
+              <span class="arrow">→</span>
+            {/if}
             <span class="dest">{nodeName(contract.destination)}</span>
           </div>
           <div class="row terms">
@@ -156,6 +161,10 @@
 
   .cargo {
     color: rgba(255, 255, 255, 0.9);
+  }
+
+  .cargo.combat {
+    color: #ff5050;
   }
 
   .arrow {

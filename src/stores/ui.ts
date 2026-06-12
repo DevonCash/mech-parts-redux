@@ -3,7 +3,7 @@
  */
 import { atom } from 'nanostores'
 
-export type DockPanel = 'contracts' | 'market' | null
+export type DockPanel = 'contracts' | 'market' | 'forces' | null
 
 export const openPanel = atom<DockPanel>(null)
 

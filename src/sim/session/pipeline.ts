@@ -23,6 +23,12 @@ import { driftMarket } from '../economy/market'
 import type { Commodity } from '../economy/models'
 import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
+import {
+  advanceEngagement,
+  rollSalvage,
+  survivingPlayerUnits,
+} from '../combat/engagement'
+import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
 import { checkEndConditions } from './end-conditions'
 import type { EndState, GameEvent, SessionState } from './state'
@@ -53,6 +59,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let markets = state.markets
   let boards = state.boards
   let active = state.active
+  let forces = state.forces
+  let engagement = state.engagement
   let stats = state.stats
 
   // ── Movement + fuel ───────────────────────────────────────────────
@@ -91,6 +99,51 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
   }
 
+  // ── Engagement ────────────────────────────────────────────────────
+  if (engagement && engagement.status === 'active') {
+    const result = advanceEngagement(engagement, rng)
+    engagement = result.engagement
+    for (const e of result.events) {
+      events.push({ tick, kind: e.kind, message: e.message })
+    }
+
+    if (engagement.status !== 'active') {
+      // Surviving mechs return to the roster with their damage.
+      forces = survivingPlayerUnits(engagement)
+      const contract = active.find((c) => c.id === engagement!.contractId)
+
+      if (engagement.status === 'won') {
+        const salvage = rollSalvage(engagement, rng)
+        let cargo = company.cargo
+        const space = company.cargoCapacity - cargoUsed(company)
+        const metal = Math.min(salvage.metal, space)
+        if (metal > 0) cargo = addCargo(cargo, 'metal', metal)
+        const precision = Math.min(salvage.precision, space - metal)
+        if (precision > 0) cargo = addCargo(cargo, 'precision', precision)
+
+        const pay = contract?.pay ?? 0
+        company = { ...company, credits: company.credits + pay, cargo }
+        if (contract) {
+          active = active.filter((c) => c.id !== contract.id)
+          stats = {
+            ...stats,
+            contractsCompleted: stats.contractsCompleted + 1,
+            creditsEarned: stats.creditsEarned + pay,
+          }
+          events.push({
+            tick,
+            kind: 'contract-completed',
+            message: `CONTRACT COMPLETE — ¤${pay} + SALVAGE (${metal} METAL${precision ? `, ${precision} PRECISION` : ''})`,
+          })
+        }
+      } else if (contract) {
+        active = active.filter((c) => c.id !== contract.id)
+        stats = { ...stats, contractsFailed: stats.contractsFailed + 1 }
+      }
+      engagement = null
+    }
+  }
+
   // ── Contracts: hard deadlines ─────────────────────────────────────
   if (active.length > 0) {
     const result = updateActiveContracts(active, tick)
@@ -101,10 +154,14 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         contractsFailed: stats.contractsFailed + result.failed.length,
       }
       for (const c of result.failed) {
+        const what =
+          c.type === 'combat'
+            ? `CLEAR ${c.hostiles} HOSTILES AT ${c.destination.toUpperCase()}`
+            : `${c.quantity} ${c.commodity?.toUpperCase()} TO ${c.destination.toUpperCase()}`
         events.push({
           tick,
           kind: 'contract-failed',
-          message: `CONTRACT FAILED — ${c.quantity} ${c.commodity.toUpperCase()} TO ${c.destination.toUpperCase()} MISSED DEADLINE`,
+          message: `CONTRACT FAILED — ${what} MISSED DEADLINE`,
         })
       }
     }
@@ -171,6 +228,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       markets,
       boards,
       active,
+      forces,
+      engagement,
       stats,
       endState,
     },

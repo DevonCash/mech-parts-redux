@@ -9,6 +9,9 @@
 import {
   BOARD_REFRESH_TICKS,
   CARGO_CAPACITY,
+  COMBAT_CONTRACT_CHANCE,
+  COMBAT_PAY_BASE,
+  COMBAT_PAY_PER_HOSTILE,
   CONTRACT_BOARD_TTL,
   DEADLINE_SLACK_MAX,
   DEADLINE_SLACK_MIN,
@@ -82,6 +85,29 @@ export function generateBoard(
     const destination = rng.pick(otherNodes)
     const metrics = routeMetrics(world, nodeId, destination.id)
     if (!metrics) continue
+
+    // Combat work: clear raiders at the destination node. Best-paid
+    // work on the board, and the only answer to ambush pressure.
+    if (rng.next() < COMBAT_CONTRACT_CHANCE) {
+      const hostiles = rng.int(2, 4)
+      const eta = travelTicks(metrics.effectiveKm)
+      let pay = COMBAT_PAY_BASE + hostiles * COMBAT_PAY_PER_HOSTILE
+      pay = Math.round(pay * rng.range(0.9, 1.15))
+      contracts.push({
+        id: `${nodeId}-${currentTick}-${i}`,
+        type: 'combat',
+        origin: nodeId,
+        destination: destination.id,
+        hostiles,
+        pay,
+        postedTick: currentTick,
+        deadlineTick:
+          currentTick + Math.ceil(eta * rng.range(DEADLINE_SLACK_MIN + 1, DEADLINE_SLACK_MAX + 1)),
+        boardExpiryTick: currentTick + CONTRACT_BOARD_TTL,
+        status: 'available',
+      })
+      continue
+    }
 
     // Prefer shipping what the destination actually wants — pick the
     // priciest commodity there from a random sample of three.

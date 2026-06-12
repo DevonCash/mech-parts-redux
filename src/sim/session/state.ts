@@ -9,6 +9,7 @@ import type { CrawlerState } from '../../stores/crawler'
 import type { CompanyState } from '../economy/market'
 import type { NodeMarket } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
+import type { Engagement, Unit } from '../combat/models'
 
 export type EndKind = 'victory' | 'stranded' | 'bankrupt'
 
@@ -38,6 +39,10 @@ export interface SessionState {
   markets: Record<string, NodeMarket>
   boards: Record<string, Board>
   active: Contract[]
+  /** The company's mech roster (damage persists between engagements) */
+  forces: Unit[]
+  /** The current engagement, if mechs are deployed */
+  engagement: Engagement | null
   params: SessionParams
   stats: SessionStats
   endState: EndState | null
@@ -50,6 +55,9 @@ export type GameEventKind =
   | 'emergency-resupply'
   | 'contract-completed'
   | 'contract-failed'
+  | 'unit-destroyed'
+  | 'engagement-won'
+  | 'engagement-lost'
   | 'victory'
   | 'stranded'
   | 'bankrupt'

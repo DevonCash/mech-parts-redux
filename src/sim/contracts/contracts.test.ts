@@ -53,7 +53,7 @@ describe('generateBoard', () => {
     expect(a).toEqual(b)
   })
 
-  it('produces 2–5 contracts originating at the node', () => {
+  it('produces 2–5 well-formed contracts originating at the node', () => {
     const board = generateBoard('valles-hub', world, makeRng(1), 0)
     expect(board.contracts.length).toBeGreaterThanOrEqual(2)
     expect(board.contracts.length).toBeLessThanOrEqual(5)
@@ -61,9 +61,29 @@ describe('generateBoard', () => {
       expect(c.origin).toBe('valles-hub')
       expect(c.destination).not.toBe('valles-hub')
       expect(c.status).toBe('available')
-      expect(c.quantity).toBeGreaterThan(0)
       expect(c.pay).toBeGreaterThan(0)
+      if (c.type === 'hauling') {
+        expect(c.quantity).toBeGreaterThan(0)
+        expect(c.commodity).toBeDefined()
+      } else {
+        expect(c.hostiles).toBeGreaterThanOrEqual(2)
+        expect(c.deadlineTick).not.toBeNull()
+      }
     }
+  })
+
+  it('boards mix hauling and combat work across seeds', () => {
+    let hauling = 0
+    let combat = 0
+    for (let seed = 0; seed < 30; seed++) {
+      const board = generateBoard('valles-hub', world, makeRng(seed), 0)
+      for (const c of board.contracts) {
+        if (c.type === 'hauling') hauling++
+        else combat++
+      }
+    }
+    expect(hauling).toBeGreaterThan(0)
+    expect(combat).toBeGreaterThan(0)
   })
 
   it('pays more for longer hauls', () => {

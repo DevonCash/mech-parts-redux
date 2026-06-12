@@ -36,12 +36,14 @@ export function acceptContract(contractId: string): ActionResult {
     return { ok: false, reason: 'CONTRACT SLOTS FULL' }
   }
 
-  const c = company.get()
-  if (cargoUsed(c) + contract.quantity > c.cargoCapacity) {
-    return { ok: false, reason: 'CARGO FULL' }
+  // Hauling cargo is loaded on accept; combat contracts carry nothing.
+  if (contract.type === 'hauling' && contract.commodity && contract.quantity) {
+    const c = company.get()
+    if (cargoUsed(c) + contract.quantity > c.cargoCapacity) {
+      return { ok: false, reason: 'CARGO FULL' }
+    }
+    company.set({ ...c, cargo: addCargo(c.cargo, contract.commodity, contract.quantity) })
   }
-
-  company.set({ ...c, cargo: addCargo(c.cargo, contract.commodity, contract.quantity) })
   activeContracts.set([...active, { ...contract, status: 'active' }])
   boards.set({
     ...boards.get(),

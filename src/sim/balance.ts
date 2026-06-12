@@ -72,6 +72,17 @@ export const HARD_DEADLINE_BONUS = 1.35
 export const DEADLINE_SLACK_MIN = 1.8
 export const DEADLINE_SLACK_MAX = 2.6
 
+// ── Combat contracts ────────────────────────────────────────────────
+
+/** Flat component of combat contract pay */
+export const COMBAT_PAY_BASE = 1200
+
+/** Pay per hostile unit at the site */
+export const COMBAT_PAY_PER_HOSTILE = 1800
+
+/** Chance a board slot rolls a combat contract instead of a haul */
+export const COMBAT_CONTRACT_CHANCE = 0.3
+
 // ── Route risk ──────────────────────────────────────────────────────
 
 /** Per-tick ambush probability per unit of route danger while in transit */
