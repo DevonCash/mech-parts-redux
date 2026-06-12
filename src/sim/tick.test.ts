@@ -44,17 +44,16 @@ describe('createStepper', () => {
 
   it('handles large time scales producing multiple ticks', () => {
     const stepper = createStepper()
-    // At 100x, 100ms real = 10,000ms game = 100 ticks
-    // But capped at MAX_TICKS_PER_STEP (50)
+    // At 100x, 100ms real = 10,000ms game = 100 ticks — under the cap
     const result = stepper.step(100, 100)
-    expect(result.ticks).toBe(50)
+    expect(result.ticks).toBe(100)
   })
 
   it('caps ticks to prevent spiral of death', () => {
     const stepper = createStepper()
-    // Huge delta — should cap at 50
+    // Huge delta — should cap at MAX_TICKS_PER_STEP (400)
     const result = stepper.step(100_000, 1)
-    expect(result.ticks).toBe(50)
+    expect(result.ticks).toBe(400)
   })
 
   it('produces correct alpha for partial ticks', () => {

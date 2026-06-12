@@ -1,6 +1,6 @@
 import type { Attachment } from "svelte/attachments";
 
-type CommandEvent = Event & {
+export type CommandEvent = Event & {
   command: string;
 };
 
@@ -18,8 +18,16 @@ export const commandMeta: Record<string, { label: string; symbol: string }> = {
     symbol: "▶",
   },
   "game-time.fast-forward": {
-    label: "Fast Forward",
+    label: "Fast Forward (10x)",
     symbol: "⏩︎",
+  },
+  "game-time.cruise": {
+    label: "Cruise (100x)",
+    symbol: "⏭",
+  },
+  "game-time.burn": {
+    label: "Max Compression (1000x)",
+    symbol: "⏭⏭",
   },
   "pause-menu.resume": {
     label: "Resume Game",
@@ -44,10 +52,11 @@ export const parseCommandId = (id: string) => {
 };
 
 export const registerCommands =
-  (cmds: Record<string, Function>): Attachment =>
+  (cmds: Record<string, (event: CommandEvent) => void>): Attachment =>
   (el: Element) => {
-    const handleCmd = (event: CommandEvent) => {
-      cmds[event.command]?.(event);
+    const handleCmd = (event: Event) => {
+      const e = event as CommandEvent;
+      cmds[e.command]?.(e);
     };
     el.addEventListener("command", handleCmd);
 

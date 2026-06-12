@@ -17,8 +17,10 @@
 /** Duration of one simulation tick in milliseconds of game time */
 export const TICK_DURATION_MS = 100
 
-/** Maximum ticks per step call — prevents spiral of death on long frames */
-const MAX_TICKS_PER_STEP = 50
+/** Maximum ticks per step call — prevents spiral of death on long
+ *  frames while leaving headroom for 1000× compression (400 ticks at
+ *  30 fps ≈ 12k ticks/s; the pipeline sustains far more). */
+const MAX_TICKS_PER_STEP = 400
 
 export interface StepResult {
   /** Number of simulation ticks to process this frame */

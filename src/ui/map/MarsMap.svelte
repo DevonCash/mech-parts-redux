@@ -6,15 +6,22 @@
   import { createTerrainShaderProtocol } from "./terrain-shader";
   import { addRouteLayer } from "./route-layer";
   import { addNodeLayer } from "./node-layer";
-  import { addCrawlerLayer } from "./crawler-layer";
+  import { addUnitLayer } from "./unit-layer";
+  import { addQuantaLayer } from "./quanta-layer";
+  import { addSensorLayer } from "./sensor-layer";
+  import { checkMapData } from "./data-availability";
+  import { buildGraticule } from "./graticule";
 
   let mapContainer: HTMLDivElement;
-  let map: maplibregl.Map;
+  let map: maplibregl.Map | undefined;
   let cleanupRoutes: (() => void) | undefined;
   let cleanupNodes: (() => void) | undefined;
-  let cleanupCrawler: (() => void) | undefined;
+  let cleanupUnits: (() => void) | undefined;
+  let cleanupQuanta: (() => void) | undefined;
+  let cleanupSensor: (() => void) | undefined;
   let loading = $state(true);
-  let error = $state<string | null>(null);
+  let degraded = $state(false);
+  let geologyAvailable = $state(false);
   let geologyVisible = $state(false);
 
 
@@ -78,58 +85,83 @@
   }
 
   onMount(() => {
+    let disposed = false;
     const protocol = new Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
+    let terrainProtocolId: string | null = null;
 
-    // GPU-rendered stepped hillshade from raw DEM tiles
-    const demHttpUrl = `${window.location.origin}/data/mars-terrain.pmtiles`;
-    const terrain = createTerrainShaderProtocol({ demUrl: demHttpUrl });
-    maplibregl.addProtocol(terrain.protocolId, terrain.handler);
+    (async () => {
+      const data = await checkMapData();
+      if (disposed) return;
+      degraded = !data.terrain || !data.contours;
+      geologyAvailable = data.geology;
 
-    map = new maplibregl.Map({
-      container: mapContainer,
-      style: {
-        version: 8,
-        name: "Mars",
-        sources: {
-          // GPU-rendered stepped hillshade
-          "terrain-shader": {
-            type: "raster",
-            tiles: [terrain.tileUrl],
-            tileSize: 512,
-            maxzoom: 7,
-          },
-          // DEM source for 3D terrain
-          "terrain-dem": {
-            type: "raster-dem",
-            url: "pmtiles:///data/mars-terrain.pmtiles",
-            tileSize: 512,
-            encoding: "terrarium",
-          },
-          // Pre-built vector contour lines from MOLA data
-          contours: {
-            type: "vector",
-            url: "pmtiles:///data/mars-contours.pmtiles",
-          },
+      const sources: Record<string, maplibregl.SourceSpecification> = {};
+      const layers: maplibregl.LayerSpecification[] = [
+        {
+          id: "background",
+          type: "background",
+          paint: { "background-color": "#0a0a0a" },
         },
-        transition: {
-          duration: 500,
-          delay: 0,
-        },
-        layers: [
-          {
-            id: "background",
-            type: "background",
-            paint: { "background-color": "#0a0a0a" },
+      ];
+
+      if (data.terrain) {
+        // GPU-rendered stepped hillshade from raw DEM tiles
+        const demHttpUrl = `${window.location.origin}/data/mars-terrain.pmtiles`;
+        const terrain = createTerrainShaderProtocol({ demUrl: demHttpUrl });
+        maplibregl.addProtocol(terrain.protocolId, terrain.handler);
+        terrainProtocolId = terrain.protocolId;
+
+        sources["terrain-shader"] = {
+          type: "raster",
+          tiles: [terrain.tileUrl],
+          tileSize: 512,
+          maxzoom: 7,
+        };
+        // DEM source for 3D terrain
+        sources["terrain-dem"] = {
+          type: "raster-dem",
+          url: "pmtiles:///data/mars-terrain.pmtiles",
+          tileSize: 512,
+          encoding: "terrarium",
+        };
+        layers.push({
+          id: "terrain",
+          type: "raster",
+          source: "terrain-shader",
+          paint: {
+            "raster-opacity": 0,
           },
-          {
-            id: "terrain",
-            type: "raster",
-            source: "terrain-shader",
-            paint: {
-              "raster-opacity": 0,
-            },
+        });
+      } else {
+        // No terrain data: graticule so the globe reads as a planet
+        sources["graticule"] = {
+          type: "geojson",
+          data: buildGraticule(),
+        };
+        layers.push({
+          id: "graticule",
+          type: "line",
+          source: "graticule",
+          paint: {
+            "line-color": [
+              "match", ["get", "kind"],
+              "equator", "rgba(255, 255, 255, 0.25)",
+              "meridian0", "rgba(255, 255, 255, 0.25)",
+              "rgba(255, 255, 255, 0.12)",
+            ],
+            "line-width": 1,
           },
+        });
+      }
+
+      if (data.contours) {
+        // Pre-built vector contour lines from MOLA data
+        sources["contours"] = {
+          type: "vector",
+          url: "pmtiles:///data/mars-contours.pmtiles",
+        };
+        layers.push(
           // Contour lines — major (2000m), visible from zoom 0
           {
             id: "contour-major",
@@ -237,160 +269,189 @@
               "text-halo-width": 1.5,
             },
           },
-        ],
-      },
-      center: [0, 0],
-      zoom: 3,
-      pitch: 0,
-      maxPitch: 85,
-      minZoom: 0,
-      maxZoom: 14,
-      renderWorldCopies: false,
-      attributionControl: false,
-      localFontFamily: "monospace",
-    });
-
-    map.scrollZoom.setZoomRate(1 / 600);
-
-    map.on("style.load", async () => {
-      map.setProjection({ type: "globe" });
-      map.setSky({});
-      map.setTerrain({ source: "terrain-dem", exaggeration: 1 });
-
-      // Load nomenclature data and convert east longitude (0–360) to standard (-180–180)
-      try {
-        const res = await fetch("/data/mars-nomenclature.json");
-        if (res.ok) {
-          const nomenclature = await res.json();
-
-          map.addSource("nomenclature", {
-            type: "geojson",
-            data: nomenclature,
-          });
-
-          // Major regions — terra, planitia, vastitas (zoom 0+)
-          map.addLayer({
-            id: "nomenclature-regions",
-            type: "symbol",
-            source: "nomenclature",
-            filter: ["in", ["get", "type"],
-              ["literal", ["Terra, terrae", "Planitia, planitiae", "Vastitas, vastitates"]]
-            ],
-            minzoom: 2,
-            layout: {
-              "text-field": ["get", "name"],
-              "text-font": ["Open Sans Regular"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], 2, 11, 6, 16],
-              "text-letter-spacing": 0.2,
-              "text-transform": "uppercase",
-              "text-allow-overlap": false,
-            },
-            paint: {
-              "text-color": "rgba(255, 255, 255, 0.5)",
-              "text-halo-color": "#0a0a0a",
-              "text-halo-width": 1.5,
-            },
-          });
-
-          // Medium features — planum, chasma, mons, vallis, chaos (zoom 4+)
-          map.addLayer({
-            id: "nomenclature-features",
-            type: "symbol",
-            source: "nomenclature",
-            filter: ["in", ["get", "type"],
-              ["literal", [
-                "Planum, plana", "Chasma, chasmata", "Mons, montes",
-                "Vallis, valles", "Chaos, chaoses", "Patera, paterae",
-                "Labyrinthus, labyrinthi", "Tholus, tholi",
-              ]]
-            ],
-            minzoom: 4,
-            layout: {
-              "text-field": ["get", "name"],
-              "text-font": ["Open Sans Regular"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], 4, 9, 8, 13],
-              "text-allow-overlap": false,
-            },
-            paint: {
-              "text-color": "rgba(255, 255, 255, 0.4)",
-              "text-halo-color": "#0a0a0a",
-              "text-halo-width": 1,
-            },
-          });
-
-          // Craters and small features (zoom 7+)
-          map.addLayer({
-            id: "nomenclature-craters",
-            type: "symbol",
-            source: "nomenclature",
-            filter: ["==", ["get", "type"], "Crater, craters"],
-            minzoom: 7,
-            layout: {
-              "text-field": ["get", "name"],
-              "text-font": ["Open Sans Regular"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], 7, 8, 10, 11],
-              "text-allow-overlap": false,
-            },
-            paint: {
-              "text-color": "rgba(255, 255, 255, 0.3)",
-              "text-halo-color": "#0a0a0a",
-              "text-halo-width": 1,
-            },
-          });
-        }
-      } catch (e) {
-        console.warn("Nomenclature data not available:", e);
+        );
       }
 
-      // Geology overlay from PMTiles
-      try {
-        map.addSource("geology", {
-          type: "vector",
-          url: "pmtiles:///data/mars-geology.pmtiles",
-        });
+      const m = new maplibregl.Map({
+        container: mapContainer,
+        style: {
+          version: 8,
+          name: "Mars",
+          sources,
+          transition: {
+            duration: 500,
+            delay: 0,
+          },
+          layers,
+        },
+        center: [0, 0],
+        zoom: 3,
+        pitch: 0,
+        maxPitch: 85,
+        minZoom: 0,
+        maxZoom: 14,
+        renderWorldCopies: false,
+        attributionControl: false,
+      });
+      map = m;
 
-        for (const cat of geologyCategories) {
-          map.addLayer(
-            {
-              id: `geology-${cat.id}`,
-              type: "fill",
-              source: "geology",
-              "source-layer": "geology",
-              filter: ["in", ["get", "unit"], ["literal", cat.units]],
-              layout: { visibility: "none" },
-              paint: {
-                "fill-color": cat.color,
-                "fill-outline-color": "transparent",
+      m.scrollZoom.setZoomRate(1 / 600);
+
+      m.on("style.load", async () => {
+        m.setProjection({ type: "globe" });
+        m.setSky({});
+        if (data.terrain) {
+          m.setTerrain({ source: "terrain-dem", exaggeration: 1 });
+        }
+
+        // Load nomenclature data and convert east longitude (0–360) to standard (-180–180)
+        try {
+          const res = await fetch("/data/mars-nomenclature.json");
+          if (res.ok) {
+            const nomenclature = await res.json();
+
+            m.addSource("nomenclature", {
+              type: "geojson",
+              data: nomenclature,
+            });
+
+            // Major regions — terra, planitia, vastitas (zoom 0+)
+            m.addLayer({
+              id: "nomenclature-regions",
+              type: "symbol",
+              source: "nomenclature",
+              filter: ["in", ["get", "type"],
+                ["literal", ["Terra, terrae", "Planitia, planitiae", "Vastitas, vastitates"]]
+              ],
+              minzoom: 2,
+              layout: {
+                "text-field": ["get", "name"],
+                "text-font": ["Open Sans Regular"],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 2, 11, 6, 16],
+                "text-letter-spacing": 0.2,
+                "text-transform": "uppercase",
+                "text-allow-overlap": false,
               },
-            },
-            "contour-major", // insert below contour lines
-          );
+              paint: {
+                "text-color": "rgba(255, 255, 255, 0.5)",
+                "text-halo-color": "#0a0a0a",
+                "text-halo-width": 1.5,
+              },
+            });
+
+            // Medium features — planum, chasma, mons, vallis, chaos (zoom 4+)
+            m.addLayer({
+              id: "nomenclature-features",
+              type: "symbol",
+              source: "nomenclature",
+              filter: ["in", ["get", "type"],
+                ["literal", [
+                  "Planum, plana", "Chasma, chasmata", "Mons, montes",
+                  "Vallis, valles", "Chaos, chaoses", "Patera, paterae",
+                  "Labyrinthus, labyrinthi", "Tholus, tholi",
+                ]]
+              ],
+              minzoom: 4,
+              layout: {
+                "text-field": ["get", "name"],
+                "text-font": ["Open Sans Regular"],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 4, 9, 8, 13],
+                "text-allow-overlap": false,
+              },
+              paint: {
+                "text-color": "rgba(255, 255, 255, 0.4)",
+                "text-halo-color": "#0a0a0a",
+                "text-halo-width": 1,
+              },
+            });
+
+            // Craters and small features (zoom 7+)
+            m.addLayer({
+              id: "nomenclature-craters",
+              type: "symbol",
+              source: "nomenclature",
+              filter: ["==", ["get", "type"], "Crater, craters"],
+              minzoom: 7,
+              layout: {
+                "text-field": ["get", "name"],
+                "text-font": ["Open Sans Regular"],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 7, 8, 10, 11],
+                "text-allow-overlap": false,
+              },
+              paint: {
+                "text-color": "rgba(255, 255, 255, 0.3)",
+                "text-halo-color": "#0a0a0a",
+                "text-halo-width": 1,
+              },
+            });
+          }
+        } catch (e) {
+          console.warn("Nomenclature data not available:", e);
         }
-      } catch (e) {
-        console.warn("Geology data not available:", e);
-      }
 
-      // Routes first (render below nodes), then node markers, then crawler on top
-      cleanupRoutes = addRouteLayer(map);
-      cleanupNodes = addNodeLayer(map);
-      cleanupCrawler = addCrawlerLayer(map);
+        // Geology overlay from PMTiles
+        if (data.geology) {
+          try {
+            m.addSource("geology", {
+              type: "vector",
+              url: "pmtiles:///data/mars-geology.pmtiles",
+            });
 
-      loading = false;
-    });
+            for (const cat of geologyCategories) {
+              m.addLayer(
+                {
+                  id: `geology-${cat.id}`,
+                  type: "fill",
+                  source: "geology",
+                  "source-layer": "geology",
+                  filter: ["in", ["get", "unit"], ["literal", cat.units]],
+                  layout: { visibility: "none" },
+                  paint: {
+                    "fill-color": cat.color,
+                    "fill-outline-color": "transparent",
+                  },
+                },
+                data.contours ? "contour-major" : undefined, // insert below contour lines
+              );
+            }
+          } catch (e) {
+            console.warn("Geology data not available:", e);
+          }
+        }
 
-    map.on("error", (e) => {
-      const msg = e.error?.message || "";
-      if (msg.includes("pmtiles") || msg.includes("404")) {
-        error = "Map data not found. Run: pnpm build:contours && pnpm build:terrain";
-      }
-    });
+        // Routes first (render below nodes), then convoys, node
+        // markers, and strategic units on top
+        cleanupRoutes = addRouteLayer(m);
+        cleanupSensor = addSensorLayer(m);
+        cleanupQuanta = addQuantaLayer(m);
+        cleanupNodes = addNodeLayer(m);
+        cleanupUnits = addUnitLayer(m);
+
+        // Headless tests drive the camera through this handle.
+        if (import.meta.env.DEV) (window as any).__mechMap = m;
+
+        loading = false;
+      });
+
+      m.on("error", (e) => {
+        // Missing optional data is non-fatal — flag flat mode, keep playing
+        const msg = e.error?.message || "";
+        if (msg.includes("pmtiles") || msg.includes("404")) {
+          degraded = true;
+          console.warn("Map data unavailable:", msg);
+        }
+      });
+    })();
 
     return () => {
-      cleanupCrawler?.();
+      disposed = true;
+      cleanupUnits?.();
       cleanupNodes?.();
+      cleanupQuanta?.();
+      cleanupSensor?.();
       cleanupRoutes?.();
-      map.remove();
-      maplibregl.removeProtocol(terrain.protocolId);
+      map?.remove();
+      if (terrainProtocolId) maplibregl.removeProtocol(terrainProtocolId);
       maplibregl.removeProtocol("pmtiles");
     };
   });
@@ -401,11 +462,11 @@
 
   {#if loading}
     <div class="overlay">
-      <span class="loading-text">LOADING TERRAIN DATA...</span>
+      <span class="loading-text">LOADING MAP...</span>
     </div>
   {/if}
 
-  {#if !loading}
+  {#if !loading && geologyAvailable}
     <button class="geology-toggle" class:active={geologyVisible} onclick={toggleGeology}>
       GEO
     </button>
@@ -421,11 +482,9 @@
     {/if}
   {/if}
 
-  {#if error}
-    <div class="overlay error">
-      <span>TERRAIN DATA ERROR</span>
-      <span class="error-detail">{error}</span>
-      <span class="error-hint">Run: npm run build:terrain</span>
+  {#if degraded}
+    <div class="degraded-badge" title="Run `pnpm build:data` to generate terrain tiles">
+      TERRAIN DATA UNAVAILABLE — FLAT MODE
     </div>
   {/if}
 </div>
@@ -539,22 +598,20 @@
     z-index: 1000;
   }
 
-  .overlay.error {
-    color: rgba(255, 80, 80, 0.9);
-    pointer-events: auto;
-  }
-
-  .error-detail {
-    font-size: 12px;
-    opacity: 0.7;
-    max-width: 400px;
-    text-align: center;
-  }
-
-  .error-hint {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.4);
-    margin-top: 8px;
+  .degraded-badge {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid rgba(208, 192, 64, 0.4);
+    color: rgba(208, 192, 64, 0.8);
+    font-family: monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 4px 8px;
+    pointer-events: none;
   }
 
   .loading-text {

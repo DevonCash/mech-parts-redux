@@ -1,24 +1,61 @@
 <script lang="ts">
   import { selection, clearSelection } from "../../stores/selection";
   import { nodes, routes } from "../../stores/world";
-  import { crawler } from "../../stores/crawler";
-  import { travelTo, cancelTravel } from "../../stores/travel";
+  import { intel } from "../../stores/intel";
+  import { tick } from "../../stores/time";
+  import { crawlerDock, units } from "../../stores/units";
+  import { FRESH_TICKS } from "../../sim/intel/models";
+  import { formatTickDuration } from "../format";
+  import { travelTo, travelOverland, cancelTravel } from "../../stores/travel";
+  import { togglePanel } from "../../stores/ui";
   import { CRAWLER_SPEED_KM_S } from "../../sim/crawler/movement";
+  import { remainingKm, ROAD_SPEED_MULT } from "../../sim/combat/orders";
+  import { CRAWLER_UNIT_ID } from "../../sim/combat/catalog";
+  import { marsDistance } from "../../sim/constants";
+  import { routeMetrics } from "../../sim/contracts/generate";
+  import { FACTIONS, nodeFaction } from "../../sim/factions/models";
   import type { GameNode } from "../../sim/economy/models";
 
   let currentSelection = $state(selection.get());
   let nodeMap = $state(nodes.get());
   let routeMap = $state(routes.get());
-  let crawlerState = $state(crawler.get());
+  let allUnits = $state(units.get());
+  let dock = $state(crawlerDock.get());
+  let intelMap = $state(intel.get());
+  let currentTick = $state(tick.get());
 
   $effect(() => {
     const unsubs = [
       selection.subscribe((v) => (currentSelection = v)),
       nodes.subscribe((v) => (nodeMap = v)),
       routes.subscribe((v) => (routeMap = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      units.subscribe((v) => (allUnits = [...v])),
+      crawlerDock.subscribe((v) => (dock = v)),
+      intel.subscribe((v) => (intelMap = v)),
+      tick.subscribe((v) => (currentTick = v)),
     ];
     return () => unsubs.forEach(u => u());
+  });
+
+  let crawler = $derived(allUnits.find((u) => u.id === CRAWLER_UNIT_ID) ?? null);
+
+  // Node state comes from the player's intel snapshots, not ground
+  // truth — stale data is the design (intelligence.md).
+  let intelReport = $derived(() => {
+    if (!node) return null;
+    const report = intelMap[node.id];
+    if (!report) return null;
+    const top = Object.entries(report.market.inventory)
+      .filter(([c, qty]) => c !== "fuel" && qty >= 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([c, qty]) => `${Math.floor(qty)} ${c.toUpperCase()}`);
+    const age = currentTick - report.observedTick;
+    return {
+      summary: top.length > 0 ? top.join(" · ") : "DEPLETED",
+      ageLabel: age <= FRESH_TICKS ? "LIVE" : `${formatTickDuration(age)} AGO`,
+      fresh: age <= FRESH_TICKS,
+    };
   });
 
   let node: GameNode | null = $derived(
@@ -26,42 +63,39 @@
   );
 
   // Is the crawler docked at this node?
-  let isDockedHere = $derived(
-    node !== null && crawlerState.currentNode === node.id
+  let isDockedHere = $derived(node !== null && dock === node.id);
+
+  // Is the crawler currently executing a move order?
+  let isTraveling = $derived(crawler?.order.kind === "move");
+
+  // Is this node the crawler's dock target?
+  let isDestination = $derived(
+    node !== null &&
+      crawler?.order.kind === "move" &&
+      crawler.order.dockNodeId === node.id,
   );
 
-  // Is the crawler docked somewhere and can we reach this node?
-  let canTravel = $derived(() => {
-    if (!node || !crawlerState.currentNode) return false;
-    if (crawlerState.currentNode === node.id) return false;
-    // Any node is potentially reachable — travelTo handles pathfinding
-    return true;
+  // Effective km (cost-comparable: time and fuel both scale with it)
+  // for both travel modes to this node
+  let travelOptions = $derived(() => {
+    if (!node || !crawler || isDockedHere) return null;
+    const roads = dock
+      ? routeMetrics({ nodes: nodeMap, routes: routeMap }, dock, node.id)
+      : null;
+    const directKm = marsDistance(crawler.lat, crawler.lng, node.position[0], node.position[1]);
+    return {
+      roadsKm: roads ? Math.round(roads.effectiveKm) : null,
+      directKm: Math.round(directKm),
+    };
   });
 
-  // Is the crawler currently traveling?
-  let isTraveling = $derived(crawlerState.currentRoute !== null);
-
-  // Is this the destination?
-  let isDestination = $derived(
-    node !== null && crawlerState.destination === node.id
-  );
-
-  // ETA calculation
+  // ETA from the crawler's live move order
   let etaDisplay = $derived(() => {
-    if (!crawlerState.currentRoute || !crawlerState.destination) return null;
-    const route = routeMap[crawlerState.currentRoute];
-    if (!route) return null;
-
-    const remainingProgress = 1 - crawlerState.routeProgress;
-    const remainingKm = route.distance * route.terrain * remainingProgress;
-    // Add remaining queued routes
-    let totalKm = remainingKm;
-    for (const routeId of crawlerState.routeQueue) {
-      const r = routeMap[routeId];
-      if (r) totalKm += r.distance * r.terrain;
-    }
-
-    const seconds = totalKm / CRAWLER_SPEED_KM_S;
+    if (!crawler || crawler.order.kind !== "move") return null;
+    const groundKm = remainingKm(crawler.lat, crawler.lng, crawler.order);
+    const speed =
+      CRAWLER_SPEED_KM_S * (crawler.order.mode === "road" ? ROAD_SPEED_MULT : 1);
+    const seconds = groundKm / speed;
     if (seconds < 60) return `${Math.ceil(seconds)}s`;
     if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
     return `${(seconds / 3600).toFixed(1)}h`;
@@ -84,6 +118,7 @@
   function handleTravel() {
     if (node) travelTo(node.id);
   }
+
 </script>
 
 {#if node}
@@ -100,6 +135,11 @@
     {/if}
 
     <dl class="fields">
+      <dt>FACTION</dt>
+      <dd style="color: {FACTIONS[nodeFaction(node)].color}">
+        {FACTIONS[nodeFaction(node)].name}
+      </dd>
+
       <dt>POS</dt>
       <dd>{formatCoord(node.position[0], node.position[1])}</dd>
 
@@ -113,11 +153,24 @@
       <dd class="stub">---</dd>
 
       <dt>INV</dt>
-      <dd class="stub">NO DATA</dd>
+      {#if intelReport()}
+        {@const report = intelReport()!}
+        <dd class="inv">
+          {report.summary}
+          <span class="intel-age" class:fresh={report.fresh}>{report.ageLabel}</span>
+        </dd>
+      {:else}
+        <dd class="stub">NO CONTACT</dd>
+      {/if}
     </dl>
 
     {#if isDockedHere}
       <div class="status docked">DOCKED</div>
+      <div class="dock-actions">
+        <button class="action dock" onclick={() => togglePanel("contracts")}>CONTRACTS</button>
+        <button class="action dock" onclick={() => togglePanel("market")}>TRADE</button>
+        <button class="action dock" onclick={() => togglePanel("forces")}>FORCES</button>
+      </div>
     {/if}
 
     {#if isDestination && isTraveling}
@@ -130,8 +183,21 @@
       <button class="action cancel" onclick={cancelTravel}>CANCEL</button>
     {/if}
 
-    {#if canTravel() && !isTraveling}
-      <button class="action travel" onclick={handleTravel}>TRAVEL</button>
+    {#if !isDockedHere && !isTraveling}
+      {@const options = travelOptions()}
+      <div class="travel-options">
+        <button
+          class="action travel"
+          disabled={!dock || options?.roadsKm === null}
+          onclick={handleTravel}
+        >
+          ROADS{options?.roadsKm ? ` · ${options.roadsKm} KM` : ""}
+        </button>
+        <button class="action overland" onclick={() => node && travelOverland(node.id)}>
+          DIRECT{options ? ` · ${options.directKm} KM` : ""}
+        </button>
+      </div>
+      <div class="travel-note">EFFECTIVE DISTANCE — ROADS ARE FAST BUT WATCHED</div>
     {/if}
   </div>
 {/if}
@@ -224,6 +290,23 @@
     opacity: 0.25;
   }
 
+  .inv {
+    font-size: 9px;
+    opacity: 0.7;
+  }
+
+  .intel-age {
+    display: block;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: #d0c040;
+    opacity: 0.8;
+  }
+
+  .intel-age.fresh {
+    color: #00ff88;
+  }
+
   .status {
     padding: 4px 8px;
     font-size: 10px;
@@ -273,11 +356,55 @@
     background: rgba(0, 255, 136, 0.25);
   }
 
+  .travel-options {
+    display: flex;
+  }
+  .travel-options .action {
+    font-size: 10px;
+  }
+  .travel-options .action + .action {
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .overland {
+    background: rgba(208, 192, 64, 0.12);
+    color: #d0c040;
+  }
+  .overland:hover {
+    background: rgba(208, 192, 64, 0.25);
+    color: #d0c040;
+  }
+
+  .travel-note {
+    padding: 3px 8px;
+    font-size: 8px;
+    letter-spacing: 1px;
+    opacity: 0.3;
+  }
+
   .cancel {
     background: rgba(255, 80, 80, 0.15);
     color: #ff5050;
   }
   .cancel:hover {
     background: rgba(255, 80, 80, 0.25);
+  }
+
+  .dock-actions {
+    display: flex;
+  }
+
+  .dock {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.8);
+    letter-spacing: 1px;
+    font-size: 10px;
+  }
+  .dock:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+  }
+  .dock + .dock {
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
   }
 </style>

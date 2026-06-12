@@ -1,5 +1,5 @@
 import { atom } from 'nanostores'
-import type { GameNode, Route } from '../sim/economy/models'
+import type { GameNode, Quantum, Route } from '../sim/economy/models'
 import { seedNodes } from '../sim/economy/seed-nodes'
 import { generateSeedRoutes } from '../sim/economy/seed-routes'
 
@@ -21,3 +21,6 @@ export const nodes = atom<Record<string, GameNode>>(
 export const routes = atom<Record<string, Route>>(
   Object.fromEntries(seedRoutes.map(r => [r.id, r]))
 )
+
+/** NPC economy agents — written back from the pipeline each batch */
+export const quanta = atom<Quantum[]>([])

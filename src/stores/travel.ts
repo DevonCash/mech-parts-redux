@@ -1,142 +1,50 @@
 /**
- * Travel commands — issue movement orders to the crawler.
- *
- * Supports both direct routes and multi-hop pathfinding.
+ * Crawler travel — thin wrappers that build move orders (the same
+ * order type every unit takes) and issue them through setUnitOrder.
  */
-import { crawler, type CrawlerState } from './crawler'
-import { routes, nodes } from './world'
-import { findPath } from '../sim/h3/graph'
-import type { Route } from '../sim/economy/models'
+import { nodes, routes } from './world'
+import {
+  buildDirectMoveOrder,
+  buildGroundMoveOrder,
+  buildRoadMoveOrder,
+} from '../sim/combat/orders'
+import { CRAWLER_UNIT_ID } from '../sim/combat/catalog'
+import { crawlerDock, crawlerUnit, setUnitOrder, type ActionResult } from './units'
 
-/**
- * Find a direct route between two nodes, if one exists.
- * Routes are bidirectional — checks both from/to orderings.
- */
-export function findDirectRoute(
-  fromNodeId: string,
-  toNodeId: string,
-  routeMap: Record<string, Route>,
-): { route: Route; reversed: boolean } | null {
-  for (const route of Object.values(routeMap)) {
-    if (route.from === fromNodeId && route.to === toNodeId) {
-      return { route, reversed: false }
-    }
-    if (route.from === toNodeId && route.to === fromNodeId) {
-      return { route, reversed: true }
-    }
-  }
-  return null
-}
-
-/**
- * Get all node IDs directly connected to a given node by a route.
- */
-export function connectedNodes(
-  nodeId: string,
-  routeMap: Record<string, Route>,
-): string[] {
-  const connected: string[] = []
-  for (const route of Object.values(routeMap)) {
-    if (route.from === nodeId) connected.push(route.to)
-    else if (route.to === nodeId) connected.push(route.from)
-  }
-  return connected
-}
-
-/**
- * Order the crawler to travel to a node.
- * Uses direct route if available, otherwise multi-hop A*.
- * Returns false if no path exists or the crawler isn't docked.
- */
+/** Follow the road network to a node (fast, cheap, watched). */
 export function travelTo(targetNodeId: string): boolean {
-  const state = crawler.get()
-  if (!state.currentNode) return false
-  if (state.currentNode === targetNodeId) return false
+  const from = crawlerDock.get()
+  if (!from || from === targetNodeId) return false
 
-  const routeMap = routes.get()
-
-  // Try direct route first
-  const direct = findDirectRoute(state.currentNode, targetNodeId, routeMap)
-  if (direct) {
-    const path = direct.reversed
-      ? [...direct.route.path].reverse()
-      : direct.route.path
-    const startPos = path[0]
-
-    crawler.set({
-      lat: startPos[0],
-      lng: startPos[1],
-      currentNode: null,
-      currentRoute: direct.route.id,
-      routeReversed: direct.reversed,
-      routeProgress: 0,
-      destination: targetNodeId,
-      routeQueue: [],
-    })
-    return true
-  }
-
-  // Multi-hop pathfinding
-  const nodeMap = nodes.get()
-  const nodePositions: Record<string, [number, number]> = {}
-  for (const n of Object.values(nodeMap)) {
-    nodePositions[n.id] = n.position
-  }
-
-  const segments = findPath(state.currentNode, targetNodeId, routeMap, nodePositions)
-  if (!segments || segments.length === 0) return false
-
-  // First segment starts immediately, rest go in the queue
-  const [first, ...rest] = segments
-  const firstRoute = routeMap[first.routeId]
-  if (!firstRoute) return false
-
-  const firstPath = first.reversed
-    ? [...firstRoute.path].reverse()
-    : firstRoute.path
-  const startPos = firstPath[0]
-
-  crawler.set({
-    lat: startPos[0],
-    lng: startPos[1],
-    currentNode: null,
-    currentRoute: first.routeId,
-    routeReversed: first.reversed,
-    routeProgress: 0,
-    destination: targetNodeId,
-    routeQueue: rest.map(s => [s.routeId, s.reversed] as [string, boolean]),
-  })
-
-  return true
+  const order = buildRoadMoveOrder(from, targetNodeId, nodes.get(), routes.get())
+  if (!order) return false
+  return setUnitOrder(CRAWLER_UNIT_ID, order).ok
 }
 
-/**
- * Cancel current travel — snap to the nearest route endpoint.
- */
+/** Straight across open terrain to a node (slow, thirsty, quiet). */
+export function travelOverland(targetNodeId: string): boolean {
+  const crawler = crawlerUnit()
+  const target = nodes.get()[targetNodeId]
+  if (!crawler || !target) return false
+  if (crawlerDock.get() === targetNodeId) return false
+
+  return setUnitOrder(
+    CRAWLER_UNIT_ID,
+    buildDirectMoveOrder([crawler.lat, crawler.lng], target),
+  ).ok
+}
+
+/** Free move to an arbitrary map point (ground click). */
+export function moveCrawlerTo(lat: number, lng: number): ActionResult {
+  const crawler = crawlerUnit()
+  if (!crawler) return { ok: false, reason: 'NO CRAWLER' }
+  return setUnitOrder(
+    CRAWLER_UNIT_ID,
+    buildGroundMoveOrder([crawler.lat, crawler.lng], [lat, lng]),
+  )
+}
+
+/** Stop where we are. */
 export function cancelTravel(): void {
-  const state = crawler.get()
-  if (!state.currentRoute) return
-
-  const routeMap = routes.get()
-  const route = routeMap[state.currentRoute]
-  if (!route) return
-
-  // Snap to whichever endpoint is closer based on progress
-  const nearStart = state.routeProgress < 0.5
-  const path = state.routeReversed ? [...route.path].reverse() : route.path
-  const snapNode = nearStart
-    ? (state.routeReversed ? route.to : route.from)
-    : (state.routeReversed ? route.from : route.to)
-  const snapPos = nearStart ? path[0] : path[path.length - 1]
-
-  crawler.set({
-    lat: snapPos[0],
-    lng: snapPos[1],
-    currentNode: snapNode,
-    currentRoute: null,
-    routeReversed: false,
-    routeProgress: 0,
-    destination: null,
-    routeQueue: [],
-  })
+  setUnitOrder(CRAWLER_UNIT_ID, { kind: 'hold' })
 }

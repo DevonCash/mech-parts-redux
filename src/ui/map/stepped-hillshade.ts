@@ -5,7 +5,15 @@
  * Uses the same DemSource cache as the contour worker — no extra tile fetches.
  */
 
-import type { DemSource } from "./maplibre-contour-pmtiles.mjs";
+/** Structural subset of mlcontour's DemSource — the vendored bundle has no type exports. */
+interface DemSource {
+  getDemTile(
+    z: number,
+    x: number,
+    y: number,
+    abortController: AbortController,
+  ): Promise<{ width: number; height: number; get(x: number, y: number): number }>;
+}
 
 interface SteppedHillshadeOptions {
   /** Light direction in degrees clockwise from north (default: 315) */

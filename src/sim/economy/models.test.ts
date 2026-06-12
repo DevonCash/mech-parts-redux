@@ -90,6 +90,7 @@ describe('RouteSchema', () => {
       path: [[0, 0], [1, 1]] as [number, number][],
       distance: 100,
       terrain: 0.5,
+      danger: 0.2,
     }
     expect(RouteSchema.safeParse(route).success).toBe(true)
   })

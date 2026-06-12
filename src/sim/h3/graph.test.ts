@@ -10,12 +10,12 @@ import type { Route } from '../economy/models'
 //            E ------r6------- F
 //
 const routes: Record<string, Route> = {
-  r1: { id: 'r1', from: 'A', to: 'B', path: [[0, 0], [0, 10]], distance: 100, terrain: 0.5 },
-  r2: { id: 'r2', from: 'B', to: 'C', path: [[0, 10], [0, 20]], distance: 100, terrain: 0.5 },
-  r3: { id: 'r3', from: 'C', to: 'D', path: [[0, 20], [0, 30]], distance: 100, terrain: 0.5 },
-  r4: { id: 'r4', from: 'B', to: 'E', path: [[0, 10], [10, 10]], distance: 100, terrain: 0.5 },
-  r5: { id: 'r5', from: 'D', to: 'F', path: [[0, 30], [10, 30]], distance: 100, terrain: 0.5 },
-  r6: { id: 'r6', from: 'E', to: 'F', path: [[10, 10], [10, 30]], distance: 200, terrain: 0.5 },
+  r1: { id: 'r1', from: 'A', to: 'B', path: [[0, 0], [0, 10]], distance: 100, terrain: 0.5, danger: 0.2 },
+  r2: { id: 'r2', from: 'B', to: 'C', path: [[0, 10], [0, 20]], distance: 100, terrain: 0.5, danger: 0.2 },
+  r3: { id: 'r3', from: 'C', to: 'D', path: [[0, 20], [0, 30]], distance: 100, terrain: 0.5, danger: 0.2 },
+  r4: { id: 'r4', from: 'B', to: 'E', path: [[0, 10], [10, 10]], distance: 100, terrain: 0.5, danger: 0.2 },
+  r5: { id: 'r5', from: 'D', to: 'F', path: [[0, 30], [10, 30]], distance: 100, terrain: 0.5, danger: 0.2 },
+  r6: { id: 'r6', from: 'E', to: 'F', path: [[10, 10], [10, 30]], distance: 200, terrain: 0.5, danger: 0.2 },
 }
 
 const positions: Record<string, [number, number]> = {
