@@ -18,7 +18,7 @@ import { company } from './company'
 import { markets } from './market'
 import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
-import { nodes, routes } from './world'
+import { nodes, quanta, routes } from './world'
 import { forces } from './forces'
 import { engagement } from './combat'
 import { rngState, sessionStats } from './session-stats'
@@ -49,6 +49,7 @@ export function gatherSessionState(): SessionState {
     active: activeContracts.get(),
     forces: forces.get(),
     engagement: engagement.get(),
+    quanta: quanta.get(),
     params: sessionParams.get(),
     stats: sessionStats.get(),
     endState: endState.get(),
@@ -67,6 +68,7 @@ export function applySessionState(state: SessionState): void {
   activeContracts.set(state.active)
   forces.set(state.forces)
   engagement.set(state.engagement)
+  quanta.set(state.quanta)
   sessionParams.set(state.params)
   sessionStats.set(state.stats)
   endState.set(state.endState)

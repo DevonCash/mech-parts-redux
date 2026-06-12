@@ -20,8 +20,14 @@ import {
   HAUL_PAY_PER_KM,
 } from '../balance'
 import { CRAWLER_SPEED_KM_S } from '../crawler/movement'
-import { COMMODITY_VALUES, type GameNode, type Route } from '../economy/models'
+import {
+  COMMODITY_VALUES,
+  type GameNode,
+  type NodeMarket,
+  type Route,
+} from '../economy/models'
 import { priceFactor } from '../economy/seed-market'
+import { shortage } from '../economy/production'
 import { findPath } from '../h3/graph'
 import { TICK_DURATION_MS } from '../tick'
 import type { Rng } from '../rng'
@@ -65,12 +71,16 @@ export function travelTicks(effectiveKm: number): number {
 
 /**
  * Generate a fresh board for a node. Consumes rng deterministically.
+ * When live market state is provided, hauling contracts target actual
+ * shortages at the destination and pay scales with urgency
+ * (contracts.md: "the economy creates them").
  */
 export function generateBoard(
   nodeId: string,
   world: WorldStatic,
   rng: Rng,
   currentTick: number,
+  markets?: Record<string, NodeMarket>,
 ): Board {
   const origin = world.nodes[nodeId]
   const contracts: Contract[] = []
@@ -109,19 +119,21 @@ export function generateBoard(
       continue
     }
 
-    // Prefer shipping what the destination actually wants — pick the
-    // priciest commodity there from a random sample of three.
+    // Prefer shipping what the destination actually wants. With live
+    // market data: weight by real shortage. Without: fall back to the
+    // node-type price profile.
+    const destMarket = markets?.[destination.id]
     const sample = [
       rng.pick(COMMODITY_KEYS),
       rng.pick(COMMODITY_KEYS),
       rng.pick(COMMODITY_KEYS),
     ]
-    const commodity = sample.reduce((best, c) =>
-      priceFactor(destination.type, c) * COMMODITY_VALUES[c] >
-      priceFactor(destination.type, best) * COMMODITY_VALUES[best]
-        ? c
-        : best,
-    )
+    const score = (c: (typeof COMMODITY_KEYS)[number]) =>
+      destMarket
+        ? (shortage(destMarket, c) + 0.1) * COMMODITY_VALUES[c]
+        : priceFactor(destination.type, c) * COMMODITY_VALUES[c]
+    const commodity = sample.reduce((best, c) => (score(c) > score(best) ? c : best))
+    const urgency = destMarket ? shortage(destMarket, commodity) : 0.3
 
     const quantity = rng.int(5, Math.min(25, CARGO_CAPACITY))
     const eta = travelTicks(metrics.effectiveKm)
@@ -131,6 +143,7 @@ export function generateBoard(
       HAUL_PAY_BASE +
       metrics.effectiveKm * HAUL_PAY_PER_KM * (1 + metrics.meanDanger) +
       quantity * COMMODITY_VALUES[commodity] * 0.15
+    pay *= 1 + urgency * 0.5
     if (hardDeadline) pay *= HARD_DEADLINE_BONUS
     pay = Math.round(pay * rng.range(0.9, 1.15))
 

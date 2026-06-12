@@ -5,13 +5,8 @@
  * Trades never mutate inputs; failures return a reason string so the UI
  * can explain the rejection.
  */
-import {
-  MARKET_DRIFT_JITTER,
-  MARKET_DRIFT_RATE,
-  SELL_MARGIN,
-} from '../balance'
-import type { Rng } from '../rng'
-import { COMMODITIES, type Commodity, type NodeMarket } from './models'
+import { SELL_MARGIN } from '../balance'
+import { type Commodity, type NodeMarket } from './models'
 import { round2 } from './seed-market'
 
 export interface CompanyState {
@@ -117,27 +112,5 @@ export function addCargo(
   return next
 }
 
-/**
- * One drift step: prices relax toward the node baseline with a little
- * jitter (keeps arbitrage spreads moving), and inventory regenerates
- * toward its baseline so producers restock and player dumping fades.
- */
-export function driftMarket(market: NodeMarket, rng: Rng): NodeMarket {
-  const prices = { ...market.prices }
-  const inventory = { ...market.inventory }
-
-  for (const c of COMMODITIES) {
-    const base = market.basePrices[c]
-    const drifted = prices[c] + (base - prices[c]) * MARKET_DRIFT_RATE
-    const jitter = 1 + rng.range(-MARKET_DRIFT_JITTER, MARKET_DRIFT_JITTER)
-    prices[c] = round2(Math.max(0.1, drifted * jitter))
-
-    const baseStock = market.baseInventory[c]
-    const diff = baseStock - inventory[c]
-    if (diff !== 0) {
-      inventory[c] += Math.sign(diff) * Math.min(Math.abs(diff), Math.max(1, Math.round(Math.abs(diff) * 0.2)))
-    }
-  }
-
-  return { ...market, prices, inventory }
-}
+// Price/inventory evolution lives in production.ts (econStep): real
+// recipes and supply/demand pricing replaced the old drift-to-baseline.

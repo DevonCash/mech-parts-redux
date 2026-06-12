@@ -41,14 +41,12 @@ export const EMERGENCY_RESUPPLY_FUEL = 600
 /** Player sell price as a fraction of the posted buy price */
 export const SELL_MARGIN = 0.85
 
-/** Ticks between market price/inventory drift steps (5 game-minutes) */
-export const MARKET_DRIFT_INTERVAL = 3000
+/** Ticks between economy steps: production, pricing, quanta decisions
+ *  (5 game-minutes) */
+export const ECON_INTERVAL = 3000
 
-/** Per-step fraction prices move back toward their node baseline */
-export const MARKET_DRIFT_RATE = 0.1
-
-/** Max relative jitter applied to prices each drift step */
-export const MARKET_DRIFT_JITTER = 0.05
+/** Hauler quanta populating the trade network */
+export const QUANTA_COUNT = 24
 
 // ── Contracts ───────────────────────────────────────────────────────
 

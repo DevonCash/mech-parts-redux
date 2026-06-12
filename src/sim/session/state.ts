@@ -7,7 +7,7 @@
  */
 import type { CrawlerState } from '../../stores/crawler'
 import type { CompanyState } from '../economy/market'
-import type { NodeMarket } from '../economy/models'
+import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
 import type { Engagement, Unit } from '../combat/models'
 
@@ -43,6 +43,8 @@ export interface SessionState {
   forces: Unit[]
   /** The current engagement, if mechs are deployed */
   engagement: Engagement | null
+  /** NPC economy agents */
+  quanta: Quantum[]
   params: SessionParams
   stats: SessionStats
   endState: EndState | null

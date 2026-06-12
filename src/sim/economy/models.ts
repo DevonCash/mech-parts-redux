@@ -103,6 +103,31 @@ export const NodeMarketSchema = z.object({
 })
 export type NodeMarket = z.infer<typeof NodeMarketSchema>
 
+// ── Quanta ──────────────────────────────────────────────────────────
+
+/**
+ * Lightweight NPC agents (economy.md §Quanta). Phase 3 ships haulers
+ * only — they chase price spreads between neighboring nodes, physically
+ * moving goods so markets breathe. Jobs/traits/reputation come later.
+ */
+export const QuantumSchema = z.object({
+  id: z.string(),
+  kind: z.literal('hauler'),
+  /** Node id when docked, null in transit */
+  location: z.string().nullable(),
+  /** Route id when in transit */
+  route: z.string().nullable(),
+  reversed: z.boolean(),
+  progress: z.number(),
+  destination: z.string().nullable(),
+  /** Single-commodity load */
+  cargo: z
+    .object({ commodity: Commodity, qty: z.number(), paid: z.number() })
+    .nullable(),
+  credits: z.number(),
+})
+export type Quantum = z.infer<typeof QuantumSchema>
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /** Create a Node, auto-computing the H3 cell from its position at res 5. */

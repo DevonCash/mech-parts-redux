@@ -3,7 +3,6 @@ import { makeRng } from '../rng'
 import {
   addCargo,
   cargoUsed,
-  driftMarket,
   executeTrade,
   quote,
   type CompanyState,
@@ -118,33 +117,3 @@ describe('cargo helpers', () => {
   })
 })
 
-describe('driftMarket', () => {
-  it('pulls prices toward the baseline', () => {
-    const market = freshMarket()
-    market.prices.ore = market.basePrices.ore * 3 // shocked price
-
-    let drifted = market
-    const rng = makeRng(7)
-    for (let i = 0; i < 50; i++) drifted = driftMarket(drifted, rng)
-
-    const deviation = Math.abs(drifted.prices.ore - market.basePrices.ore)
-    expect(deviation).toBeLessThan(market.basePrices.ore * 0.2)
-  })
-
-  it('regenerates inventory toward baseline', () => {
-    const market = freshMarket()
-    market.inventory.fuel = 0
-
-    let drifted = market
-    const rng = makeRng(7)
-    for (let i = 0; i < 60; i++) drifted = driftMarket(drifted, rng)
-
-    expect(drifted.inventory.fuel).toBe(market.baseInventory.fuel)
-  })
-
-  it('is deterministic for a given rng state', () => {
-    const a = driftMarket(freshMarket(), makeRng(99))
-    const b = driftMarket(freshMarket(), makeRng(99))
-    expect(a).toEqual(b)
-  })
-})

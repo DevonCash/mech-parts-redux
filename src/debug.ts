@@ -13,7 +13,8 @@ import { engagement, selectedUnit, deploy, setUnitOrder } from './stores/combat'
 import { endState, sessionParams, startNewSession } from './stores/session'
 import { tick, timeScale } from './stores/time'
 import { travelTo } from './stores/travel'
-import { nodes, routes } from './stores/world'
+import { nodes, quanta, routes } from './stores/world'
+import { quantumPosition } from './sim/economy/quanta'
 
 export function installDebugHandle(): void {
   ;(window as any).__mech = {
@@ -32,6 +33,10 @@ export function installDebugHandle(): void {
       timeScale,
       nodes,
       routes,
+      quanta,
+    },
+    helpers: {
+      quantumPosition,
     },
     actions: {
       startNewSession,

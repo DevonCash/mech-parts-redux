@@ -5,10 +5,12 @@ import {
   CARGO_CAPACITY,
   CREDIT_TARGET,
   FUEL_CAPACITY,
+  QUANTA_COUNT,
   START_CREDITS,
   START_FUEL,
 } from '../balance'
 import { seedMarkets } from '../economy/seed-market'
+import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
 import { startingForces } from '../combat/catalog'
 import { makeRng } from '../rng'
@@ -48,6 +50,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     active: [],
     forces: startingForces(),
     engagement: null,
+    quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
     params: {
       seed,
       startCredits: START_CREDITS,
@@ -58,7 +61,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
   }
 
   // Starting node gets an immediate board so the first dock isn't empty.
-  state.boards[startNode] = generateBoard(startNode, world, rng, 0)
+  state.boards[startNode] = generateBoard(startNode, world, rng, 0, markets)
   state.rngState = rng.state
 
   return state

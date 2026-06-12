@@ -14,12 +14,13 @@ import {
   AMBUSH_CARGO_LOSS_MIN,
   AMBUSH_CREDIT_LOSS_MAX,
   AMBUSH_RATE_PER_TICK,
+  ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
-  MARKET_DRIFT_INTERVAL,
 } from '../balance'
 import { advanceCrawler, CRAWLER_SPEED_KM_S } from '../crawler/movement'
 import { TICK_DURATION_MS } from '../tick'
-import { driftMarket } from '../economy/market'
+import { econStep } from '../economy/production'
+import { moveQuanta, quantaDecisions } from '../economy/quanta'
 import type { Commodity } from '../economy/models'
 import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
@@ -61,6 +62,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let active = state.active
   let forces = state.forces
   let engagement = state.engagement
+  let quanta = state.quanta
   let stats = state.stats
 
   // ── Movement + fuel ───────────────────────────────────────────────
@@ -171,22 +173,24 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   if (crawler.currentNode !== null && boardStale(boards[crawler.currentNode], tick)) {
     boards = {
       ...boards,
-      [crawler.currentNode]: generateBoard(crawler.currentNode, world, rng, tick),
+      [crawler.currentNode]: generateBoard(crawler.currentNode, world, rng, tick, markets),
     }
   }
-  if (tick % MARKET_DRIFT_INTERVAL === 0) {
+  // ── Quanta in transit (every tick — it's one progress add each) ──
+  quanta = moveQuanta(quanta, world.routes)
+
+  // ── Economy step: production, pricing, quanta decisions ──────────
+  if (tick % ECON_INTERVAL === 0) {
     const pruned: typeof boards = {}
     for (const [nodeId, board] of Object.entries(boards)) {
       pruned[nodeId] = pruneBoard(board, tick)
     }
     boards = pruned
 
-    // ── Market drift ──────────────────────────────────────────────
-    const drifted: typeof markets = {}
-    for (const nodeId of Object.keys(markets).sort()) {
-      drifted[nodeId] = driftMarket(markets[nodeId], rng)
-    }
-    markets = drifted
+    markets = econStep(world.nodes, markets, rng)
+    const result = quantaDecisions(quanta, markets, world.routes, rng)
+    quanta = result.quanta
+    markets = result.markets
   }
 
   // ── End conditions ────────────────────────────────────────────────
@@ -230,6 +234,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       active,
       forces,
       engagement,
+      quanta,
       stats,
       endState,
     },

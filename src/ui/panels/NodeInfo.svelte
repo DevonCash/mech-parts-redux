@@ -1,6 +1,7 @@
 <script lang="ts">
   import { selection, clearSelection } from "../../stores/selection";
   import { nodes, routes } from "../../stores/world";
+  import { markets } from "../../stores/market";
   import { crawler } from "../../stores/crawler";
   import { travelTo, cancelTravel } from "../../stores/travel";
   import { togglePanel } from "../../stores/ui";
@@ -11,6 +12,7 @@
   let nodeMap = $state(nodes.get());
   let routeMap = $state(routes.get());
   let crawlerState = $state(crawler.get());
+  let marketMap = $state(markets.get());
 
   $effect(() => {
     const unsubs = [
@@ -18,8 +20,23 @@
       nodes.subscribe((v) => (nodeMap = v)),
       routes.subscribe((v) => (routeMap = v)),
       crawler.subscribe((v) => (crawlerState = v)),
+      markets.subscribe((v) => (marketMap = v)),
     ];
     return () => unsubs.forEach(u => u());
+  });
+
+  // Top stocked commodities at this node (ground truth for now — the
+  // intelligence staleness layer arrives with the fog-of-war phase).
+  let inventorySummary = $derived(() => {
+    if (!node) return null;
+    const market = marketMap[node.id];
+    if (!market) return null;
+    const top = Object.entries(market.inventory)
+      .filter(([c, qty]) => c !== "fuel" && qty >= 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([c, qty]) => `${Math.floor(qty)} ${c.toUpperCase()}`);
+    return top.length > 0 ? top.join(" · ") : "DEPLETED";
   });
 
   let node: GameNode | null = $derived(
@@ -114,7 +131,11 @@
       <dd class="stub">---</dd>
 
       <dt>INV</dt>
-      <dd class="stub">NO DATA</dd>
+      {#if inventorySummary()}
+        <dd class="inv">{inventorySummary()}</dd>
+      {:else}
+        <dd class="stub">NO DATA</dd>
+      {/if}
     </dl>
 
     {#if isDockedHere}
@@ -228,6 +249,11 @@
 
   .stub {
     opacity: 0.25;
+  }
+
+  .inv {
+    font-size: 9px;
+    opacity: 0.7;
   }
 
   .status {
