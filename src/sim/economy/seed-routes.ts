@@ -6,7 +6,19 @@
  */
 import { marsDistance } from '../constants'
 import { greatCirclePath, pathDistance } from '../h3/pathfinding'
+import { seedFromString } from '../rng'
 import type { GameNode, Route } from './models'
+
+/**
+ * Deterministic per-route ambush risk: a base floor, a hash-derived
+ * component (stable per route id), and a length component — long,
+ * remote hauls are more dangerous than short hops.
+ */
+export function routeDanger(routeId: string, distance: number): number {
+  const hashPart = (seedFromString(routeId) % 100) / 400  // 0–0.25
+  const lengthPart = Math.min(distance / 20000, 0.2)      // 0–0.2
+  return Math.min(0.1 + hashPart + lengthPart, 0.6)
+}
 
 /**
  * Generate routes for a set of nodes.
@@ -59,6 +71,7 @@ export function generateSeedRoutes(
         path,
         distance,
         terrain: 0.5, // stub for M1
+        danger: routeDanger(edgeKey, distance),
       })
     }
   }
