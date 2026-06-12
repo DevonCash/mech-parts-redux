@@ -25,6 +25,26 @@ export const CARGO_CAPACITY = 60
 /** Maximum simultaneously active contracts (reputation scaling is Phase 3) */
 export const ACTIVE_CONTRACT_SLOTS = 3
 
+// ── Terrain ─────────────────────────────────────────────────────────
+// The planet is a fixed procedural heightmap (src/sim/terrain) — the
+// same world in every session, so the seed is a constant, not the
+// session seed. Roads are priced by the ground they cross.
+
+/** World seed for the synthetic heightmap */
+export const TERRAIN_SEED = 8421
+
+/** Best route terrain factor — a graded road across a plain
+ *  (effectiveKm = distance × terrain; speed mult = 1/terrain) */
+export const TERRAIN_FACTOR_MIN = 0.5
+
+/** Worst route terrain factor — switchbacks through highlands; must
+ *  stay below overland's implicit 1.0 so roads always win */
+export const TERRAIN_FACTOR_MAX = 0.85
+
+/** Mean local relief (m) at which a route hits TERRAIN_FACTOR_MAX.
+ *  Seeded-network route means run ~70–440 m at the 40 km sample ring. */
+export const TERRAIN_ROUGHNESS_FULL_M = 400
+
 // ── Fuel ────────────────────────────────────────────────────────────
 
 /** Fuel burned per effective km traveled (route distance × terrain) */

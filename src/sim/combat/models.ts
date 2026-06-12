@@ -74,6 +74,9 @@ export const UnitOrderSchema = z.discriminatedUnion('kind', [
     kind: z.literal('move'),
     waypoints: z.array(z.tuple([z.number(), z.number()])),
     mode: z.enum(['open', 'road']),
+    /** Road speed multiplier (1/terrain, distance-weighted across the
+     *  path's routes). Absent on old saves → ROAD_SPEED_MULT. */
+    roadMult: z.number().optional(),
     /** Dock at this node on arrival (crawler) */
     dockNodeId: z.string().optional(),
   }),

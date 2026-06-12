@@ -265,17 +265,29 @@ function playSession(seed: number, maxTicks: number, creditTarget?: number): Ses
 
 describe('full-loop playthrough (bot)', () => {
   // Trips are millions of ticks at plausible crawler speeds, so the
-  // multi-seed runs play to a reduced credit target (same loop, fewer
-  // hauls) and one run goes the full distance.
+  // default run is a small sample: several seeds to a reduced credit
+  // target (same loop, fewer hauls) in ~minutes. The full-distance
+  // session and the deeper targets are the same code, just longer —
+  // run them with FULL_PLAYTHROUGH=1 (e.g. before a balance-sensitive
+  // merge or as a nightly).
   const SESSION_BUDGET = 120_000_000
+  const SMOKE_TARGET = 8_000
   const SHORT_TARGET = 12_000
+  const deep = !!process.env.FULL_PLAYTHROUGH
 
-  it('a contract-following bot wins a full session', () => {
+  it('wins across multiple seeds (balance is not seed-lucky)', () => {
+    for (const seed of [1, 7, 42]) {
+      const result = playSession(seed, SESSION_BUDGET, SMOKE_TARGET)
+      expect(result.endState?.kind, `seed ${seed}`).toBe('victory')
+    }
+  }, 1_200_000)
+
+  it.runIf(deep)('a contract-following bot wins a full session', () => {
     const result = playSession(2026, SESSION_BUDGET)
     expect(result.endState?.kind).toBe('victory')
   }, 1_200_000)
 
-  it('wins across multiple seeds (balance is not seed-lucky)', () => {
+  it.runIf(deep)('wins deeper sessions across seeds', () => {
     for (const seed of [1, 7, 42]) {
       const result = playSession(seed, SESSION_BUDGET, SHORT_TARGET)
       expect(result.endState?.kind, `seed ${seed}`).toBe('victory')

@@ -7,6 +7,7 @@
 import { marsDistance } from '../constants'
 import { greatCirclePath, pathDistance } from '../h3/pathfinding'
 import { seedFromString } from '../rng'
+import { routeTerrainFactor } from '../terrain/heightmap'
 import type { GameNode, Route } from './models'
 
 /**
@@ -70,7 +71,8 @@ export function generateSeedRoutes(
         to: other.node.id,
         path,
         distance,
-        terrain: 0.5, // stub for M1
+        // Priced by the ground it crosses (synthetic heightmap)
+        terrain: routeTerrainFactor(path),
         danger: routeDanger(edgeKey, distance),
       })
     }

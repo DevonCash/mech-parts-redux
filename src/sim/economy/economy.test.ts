@@ -4,7 +4,13 @@ import { seedNodes } from './seed-nodes'
 import { generateSeedRoutes } from './seed-routes'
 import { seedMarkets } from './seed-market'
 import { adjustPrices, econStep, produce, shortage } from './production'
-import { moveQuanta, quantaDecisions, quantumPosition, seedQuanta } from './quanta'
+import {
+  moveQuanta,
+  quantaDecisions,
+  quantumPosition,
+  QUANTUM_SPEED_KM_S,
+  seedQuanta,
+} from './quanta'
 import type { Quantum } from './models'
 
 const nodes = Object.fromEntries(seedNodes.map((n) => [n.id, n]))
@@ -185,8 +191,14 @@ describe('quanta', () => {
     const commodity = traveler!.cargo!.commodity
     const destStockBefore = m[destination].inventory[commodity]
 
-    // Run movement until that hauler docks, then one decision step to sell.
-    for (let i = 0; i < 400000; i++) {
+    // Run movement until that hauler docks, then one decision step to
+    // sell. Budget derives from the route so terrain changes can't
+    // silently starve the loop.
+    const travelRoute = routes[traveler!.route!]
+    const tripTicks = Math.ceil(
+      (travelRoute.distance * travelRoute.terrain) / (QUANTUM_SPEED_KM_S * 0.1),
+    )
+    for (let i = 0; i < tripTicks + 10; i++) {
       quanta = moveQuanta(quanta, routes)
       const q = quanta.find((x) => x.id === traveler!.id)!
       if (q.location === destination) break

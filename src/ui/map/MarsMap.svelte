@@ -3,7 +3,14 @@
   import maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { Protocol } from "pmtiles";
-  import { createTerrainShaderProtocol } from "./terrain-shader";
+  import { createTerrainShaderProtocol, pmtilesDemSource } from "./terrain-shader";
+  import {
+    SYNTHETIC_DEM_MAXZOOM,
+    SYNTHETIC_DEM_PROTOCOL,
+    SYNTHETIC_DEM_TILE_URL,
+    syntheticDemHandler,
+    syntheticDemSource,
+  } from "./synthetic-dem";
   import { addRouteLayer } from "./route-layer";
   import { addNodeLayer } from "./node-layer";
   import { addUnitLayer } from "./unit-layer";
@@ -21,6 +28,7 @@
   let cleanupSensor: (() => void) | undefined;
   let loading = $state(true);
   let degraded = $state(false);
+  let synthetic = $state(false);
   let geologyAvailable = $state(false);
   let geologyVisible = $state(false);
 
@@ -93,7 +101,8 @@
     (async () => {
       const data = await checkMapData();
       if (disposed) return;
-      degraded = !data.terrain || !data.contours;
+      synthetic = !data.terrain;
+      degraded = false;
       geologyAvailable = data.geology;
 
       const sources: Record<string, maplibregl.SourceSpecification> = {};
@@ -105,36 +114,51 @@
         },
       ];
 
-      if (data.terrain) {
-        // GPU-rendered stepped hillshade from raw DEM tiles
-        const demHttpUrl = `${window.location.origin}/data/mars-terrain.pmtiles`;
-        const terrain = createTerrainShaderProtocol({ demUrl: demHttpUrl });
-        maplibregl.addProtocol(terrain.protocolId, terrain.handler);
-        terrainProtocolId = terrain.protocolId;
+      // GPU-rendered stepped hillshade from raw DEM tiles. Real MOLA
+      // PMTiles when present; the seeded synthetic heightmap otherwise
+      // (same encoding, zero data files — the CI/dev path).
+      const demHttpUrl = `${window.location.origin}/data/mars-terrain.pmtiles`;
+      const terrain = createTerrainShaderProtocol({
+        source: data.terrain ? pmtilesDemSource(demHttpUrl) : syntheticDemSource(),
+      });
+      maplibregl.addProtocol(terrain.protocolId, terrain.handler);
+      terrainProtocolId = terrain.protocolId;
+      if (!data.terrain) {
+        maplibregl.addProtocol(SYNTHETIC_DEM_PROTOCOL, syntheticDemHandler);
+      }
 
-        sources["terrain-shader"] = {
-          type: "raster",
-          tiles: [terrain.tileUrl],
-          tileSize: 512,
-          maxzoom: 7,
-        };
-        // DEM source for 3D terrain
-        sources["terrain-dem"] = {
-          type: "raster-dem",
-          url: "pmtiles:///data/mars-terrain.pmtiles",
-          tileSize: 512,
-          encoding: "terrarium",
-        };
-        layers.push({
-          id: "terrain",
-          type: "raster",
-          source: "terrain-shader",
-          paint: {
-            "raster-opacity": 0,
-          },
-        });
-      } else {
-        // No terrain data: graticule so the globe reads as a planet
+      sources["terrain-shader"] = {
+        type: "raster",
+        tiles: [terrain.tileUrl],
+        tileSize: 512,
+        maxzoom: 7,
+      };
+      // DEM source for 3D terrain
+      sources["terrain-dem"] = data.terrain
+        ? {
+            type: "raster-dem",
+            url: "pmtiles:///data/mars-terrain.pmtiles",
+            tileSize: 512,
+            encoding: "terrarium",
+          }
+        : {
+            type: "raster-dem",
+            tiles: [SYNTHETIC_DEM_TILE_URL],
+            tileSize: 512,
+            maxzoom: SYNTHETIC_DEM_MAXZOOM,
+            encoding: "terrarium",
+          };
+      layers.push({
+        id: "terrain",
+        type: "raster",
+        source: "terrain-shader",
+        paint: {
+          "raster-opacity": 1,
+        },
+      });
+
+      if (!data.contours) {
+        // Without contour lines, a graticule keeps the globe legible
         sources["graticule"] = {
           type: "geojson",
           data: buildGraticule(),
@@ -300,9 +324,7 @@
       m.on("style.load", async () => {
         m.setProjection({ type: "globe" });
         m.setSky({});
-        if (data.terrain) {
-          m.setTerrain({ source: "terrain-dem", exaggeration: 1 });
-        }
+        m.setTerrain({ source: "terrain-dem", exaggeration: 1 });
 
         // Load nomenclature data and convert east longitude (0–360) to standard (-180–180)
         try {
@@ -452,6 +474,7 @@
       cleanupRoutes?.();
       map?.remove();
       if (terrainProtocolId) maplibregl.removeProtocol(terrainProtocolId);
+      if (synthetic) maplibregl.removeProtocol(SYNTHETIC_DEM_PROTOCOL);
       maplibregl.removeProtocol("pmtiles");
     };
   });
@@ -485,6 +508,10 @@
   {#if degraded}
     <div class="degraded-badge" title="Run `pnpm build:data` to generate terrain tiles">
       TERRAIN DATA UNAVAILABLE — FLAT MODE
+    </div>
+  {:else if synthetic}
+    <div class="degraded-badge" title="Procedural heightmap — run `pnpm build:data` for real MOLA terrain">
+      SYNTHETIC TERRAIN
     </div>
   {/if}
 </div>
