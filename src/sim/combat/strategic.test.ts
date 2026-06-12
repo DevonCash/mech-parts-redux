@@ -298,6 +298,74 @@ describe('raider technicals vs the crawler', () => {
   })
 })
 
+describe('neutral convoys', () => {
+  const haulerAt = (lat = 0, lng = 0): Unit =>
+    buildUnit('hauler-q-1', 'CONVOY Q-1', 'hauler', 'neutral', lat, lng)
+
+  it('player units never auto-acquire a neutral inside aggro range', () => {
+    const hauler = haulerAt()
+    const mech = { ...startingGarage()[0], lat: 0.01, lng: 0 } // ~0.6 km
+    let units: Unit[] = [mech, hauler]
+    let pilots = startingPilots()
+    const rng = makeRng(2)
+    for (let i = 0; i < 300; i++) {
+      const r = advanceUnits(units, pilots, rng, true)
+      units = r.units
+      pilots = r.pilots
+    }
+    const after = units.find((u) => u.id === hauler.id)!
+    expect(after.components).toEqual(hauler.components)
+  })
+
+  it('an explicit attack order on a neutral works — piracy', () => {
+    const hauler = haulerAt()
+    const mech: Unit = {
+      ...startingGarage()[0],
+      lat: 0.01,
+      lng: 0,
+      order: { kind: 'attack', targetId: 'hauler-q-1' },
+    }
+    let units: Unit[] = [mech, hauler]
+    let pilots = startingPilots()
+    const rng = makeRng(2)
+    for (let i = 0; i < 3000 && !unitDestroyed(units.find((u) => u.id === hauler.id)!); i++) {
+      const r = advanceUnits(units, pilots, rng, true)
+      units = r.units
+      pilots = r.pilots
+    }
+    expect(unitDestroyed(units.find((u) => u.id === hauler.id)!)).toBe(true)
+  })
+
+  it('hostiles prey on a neutral inside their leash — with no player anywhere', () => {
+    const camp: [number, number] = [0, 0]
+    const band = spawnBand(7, camp, makeRng(7))
+    const hauler = haulerAt(0.02, 0) // ~1.2 km from camp, inside leash
+    let units: Unit[] = [...band, hauler]
+    let pilots = startingPilots()
+    const rng = makeRng(2)
+    for (let i = 0; i < 5000 && !unitDestroyed(units.find((u) => u.id === hauler.id)!); i++) {
+      const r = advanceUnits(units, pilots, rng, true)
+      units = r.units
+      pilots = r.pilots
+    }
+    expect(unitDestroyed(units.find((u) => u.id === hauler.id)!)).toBe(true)
+  })
+
+  it('neutrals never fire back', () => {
+    const hauler = haulerAt()
+    // An adjacent hostile with the hauler in easy reach.
+    const band = spawnBand(8, [0.005, 0], makeRng(8)).slice(0, 1)
+    let units: Unit[] = [hauler, ...band]
+    const rng = makeRng(2)
+    for (let i = 0; i < 500; i++) {
+      const r = advanceUnits(units, startingPilots(), rng, true)
+      units = r.units
+    }
+    const raider = units.find((u) => u.side === 'hostile')!
+    expect(raider.components).toEqual(band[0].components)
+  })
+})
+
 describe('rollSalvage', () => {
   it('only wrecks yield salvage', () => {
     const garrison = spawnHostiles(combatContract(2), [0, 0], makeRng(1))

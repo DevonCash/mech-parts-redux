@@ -14,12 +14,15 @@ import {
   REP_ABANDONED,
   REP_COMPLETED,
 } from '../sim/factions/models'
+import { LOOT_RANGE_KM } from '../sim/balance'
+import { CRAWLER_UNIT_ID } from '../sim/combat/catalog'
 import { spawnHostiles } from '../sim/combat/strategic'
+import { marsDistance } from '../sim/constants'
 import { liveBandIds } from '../sim/raiders/bands'
 import { makeRng } from '../sim/rng'
 import { company } from './company'
 import { crawlerDock, units, type ActionResult } from './units'
-import { nodes } from './world'
+import { nodes, quanta, wrecks } from './world'
 import { reputation } from './reputation'
 import { rngState, sessionStats } from './session-stats'
 import { tick } from './time'
@@ -66,12 +69,34 @@ export function acceptContract(contractId: string): ActionResult {
     const rng = makeRng(rngState.get())
     units.set([...units.get(), ...spawnHostiles(contract, site.position, rng)])
     rngState.set(rng.state)
-  } else {
+  } else if (contract.type === 'security') {
     if (!liveBandIds(units.get()).has(contract.bandId)) {
       return { ok: false, reason: 'BAND ALREADY DESTROYED' }
     }
     if (active.some((c) => c.type === 'security' && c.bandId === contract.bandId)) {
       return { ok: false, reason: 'BAND ALREADY UNDER CONTRACT' }
+    }
+  } else if (contract.type === 'escort') {
+    // The convoy must still be assembling here — once it rolls, the
+    // charter sails unguarded.
+    const q = quanta.get().find((x) => x.id === contract.quantumId)
+    if (!q || q.location !== contract.origin) {
+      return { ok: false, reason: 'CONVOY ALREADY DEPARTED' }
+    }
+    if (!liveBandIds(units.get()).has(contract.bandId)) {
+      return { ok: false, reason: 'THREAT ALREADY CLEARED' }
+    }
+    if (active.some((c) => c.type === 'escort' && c.quantumId === contract.quantumId)) {
+      return { ok: false, reason: 'CONVOY ALREADY UNDER ESCORT' }
+    }
+  } else {
+    // Salvage: the cargo waits at the wreck — nothing loads on accept.
+    const wreck = wrecks.get().find((w) => w.id === contract.wreckId)
+    if (!wreck || wreck.cargo.qty < contract.quantity) {
+      return { ok: false, reason: 'WRECK ALREADY STRIPPED' }
+    }
+    if (active.some((c) => c.type === 'salvage' && c.wreckId === contract.wreckId)) {
+      return { ok: false, reason: 'WRECK ALREADY UNDER CONTRACT' }
     }
   }
   activeContracts.set([...active, { ...contract, status: 'active' }])
@@ -103,6 +128,40 @@ export function deliverContract(contractId: string): ActionResult {
     contractsCompleted: stats.contractsCompleted + 1,
     creditsEarned: stats.creditsEarned + contract.pay,
   })
+  return { ok: true }
+}
+
+/**
+ * Loot a cargo wreck: transfer as much as the hold takes. Works with or
+ * without a salvage contract — scavenging the war's leftovers is legal;
+ * the contract is just the buyer waiting at a node.
+ */
+export function lootWreck(wreckId: string): ActionResult {
+  const wreck = wrecks.get().find((w) => w.id === wreckId)
+  if (!wreck) return { ok: false, reason: 'WRECK NOT FOUND' }
+
+  const crawler = units.get().find((u) => u.id === CRAWLER_UNIT_ID)
+  if (!crawler) return { ok: false, reason: 'NO CRAWLER' }
+  if (marsDistance(crawler.lat, crawler.lng, wreck.lat, wreck.lng) > LOOT_RANGE_KM) {
+    return { ok: false, reason: 'OUT OF RANGE' }
+  }
+
+  const c = company.get()
+  const space = c.cargoCapacity - cargoUsed(c)
+  const qty = Math.min(wreck.cargo.qty, space)
+  if (qty <= 0) return { ok: false, reason: 'CARGO FULL' }
+
+  company.set({ ...c, cargo: addCargo(c.cargo, wreck.cargo.commodity, qty) })
+  const remaining = wreck.cargo.qty - qty
+  wrecks.set(
+    remaining > 0
+      ? wrecks
+          .get()
+          .map((w) =>
+            w.id === wreckId ? { ...w, cargo: { ...w.cargo, qty: remaining } } : w,
+          )
+      : wrecks.get().filter((w) => w.id !== wreckId),
+  )
   return { ok: true }
 }
 

@@ -27,6 +27,11 @@
     "contract-completed": "good",
     victory: "good",
     "emergency-resupply": "warn",
+    "convoy-attacked": "warn",
+    "convoy-lost": "bad",
+    piracy: "bad",
+    "convoy-arrived": "good",
+    "salvage-recovered": "good",
   };
 </script>
 

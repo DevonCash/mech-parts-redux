@@ -20,6 +20,10 @@ export function h3AreaToMars(earthAreaKm2: number): number {
   return earthAreaKm2 * MARS_EARTH_RATIO ** 2
 }
 
+/** Km per degree of Mars latitude — lower-bounds great-circle distance
+ *  for cheap rejects before a haversine */
+export const KM_PER_DEG = 59.2
+
 /** Great-circle distance between two lat/lng points on Mars (Haversine), in km */
 export function marsDistance(
   lat1: number,

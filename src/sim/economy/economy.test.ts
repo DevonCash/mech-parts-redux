@@ -199,7 +199,7 @@ describe('quanta', () => {
       (travelRoute.distance * travelRoute.terrain) / (QUANTUM_SPEED_KM_S * 0.1),
     )
     for (let i = 0; i < tripTicks + 10; i++) {
-      quanta = moveQuanta(quanta, routes)
+      quanta = moveQuanta(quanta, routes, i)
       const q = quanta.find((x) => x.id === traveler!.id)!
       if (q.location === destination) break
     }
@@ -222,6 +222,7 @@ describe('quanta', () => {
       destination: route.to,
       cargo: null,
       credits: 100,
+      materialized: false,
     }
     const pos = quantumPosition(q, routes)
     expect(pos).not.toBeNull()

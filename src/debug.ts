@@ -6,7 +6,13 @@
  */
 import { company } from './stores/company'
 import { buyFuel, emergencyResupply, markets, tradeCommodity } from './stores/market'
-import { boards, activeContracts, acceptContract } from './stores/contracts'
+import {
+  boards,
+  activeContracts,
+  acceptContract,
+  deliverContract,
+  lootWreck,
+} from './stores/contracts'
 import {
   assignPilot,
   buyMech,
@@ -25,9 +31,11 @@ import { hirePilot, hirePools, pilots } from './stores/pilots'
 import { endState, sessionParams, startNewSession } from './stores/session'
 import { tick, timeScale } from './stores/time'
 import { travelTo, travelOverland, moveCrawlerTo, cancelTravel } from './stores/travel'
-import { nodes, quanta, routes } from './stores/world'
+import { nodes, quanta, routes, wrecks } from './stores/world'
+import { bandRaids } from './stores/session-stats'
 import { openPanel } from './stores/ui'
 import { quantumPosition } from './sim/economy/quanta'
+import { haulerUnitId, quantumIdOfHauler } from './sim/economy/convoys'
 import { bandsNearNode, liveBandIds, liveCamps, routeLiveDanger } from './sim/raiders/bands'
 
 export function installDebugHandle(): void {
@@ -51,10 +59,14 @@ export function installDebugHandle(): void {
       nodes,
       routes,
       quanta,
+      wrecks,
+      bandRaids,
       openPanel,
     },
     helpers: {
       quantumPosition,
+      haulerUnitId,
+      quantumIdOfHauler,
       bandsNearNode,
       liveBandIds,
       liveCamps,
@@ -67,6 +79,8 @@ export function installDebugHandle(): void {
       moveCrawlerTo,
       cancelTravel,
       acceptContract,
+      deliverContract,
+      lootWreck,
       deploy,
       recall,
       setUnitOrder,

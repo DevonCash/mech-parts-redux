@@ -14,3 +14,6 @@ export const rngState = atom<number>(0)
 /** Raider band respawn bookkeeping (pipeline-owned). */
 export const raiderRespawnAt = atom<number>(0)
 export const raiderSerial = atom<number>(0)
+
+/** Last sortie tick per raider band — the raid cooldown clock. */
+export const bandRaids = atom<Record<string, number>>({})

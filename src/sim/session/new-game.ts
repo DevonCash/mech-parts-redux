@@ -48,6 +48,8 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     garage: startingGarage(),
     crawlerDock: startNode,
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
+    wrecks: [],
+    bandRaids: {},
     pilots: startingPilots(),
     hirePools: {},
     mechLots: {},

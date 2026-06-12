@@ -19,6 +19,8 @@ function quantaGeoJSON() {
   const crawler = crawlerUnit()
   const features: any[] = []
   for (const q of quanta.get()) {
+    // Materialized convoys are real units — the unit layer draws them.
+    if (q.materialized) continue
     const pos = quantumPosition(q, routeMap)
     if (!pos) continue
     if (!withinSensorRange(crawler, pos[0], pos[1])) continue

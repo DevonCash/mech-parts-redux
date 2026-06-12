@@ -15,6 +15,7 @@
   import { addNodeLayer } from "./node-layer";
   import { addUnitLayer } from "./unit-layer";
   import { addQuantaLayer } from "./quanta-layer";
+  import { addWreckLayer } from "./wreck-layer";
   import { addSensorLayer } from "./sensor-layer";
   import { checkMapData } from "./data-availability";
   import { buildGraticule } from "./graticule";
@@ -25,6 +26,7 @@
   let cleanupNodes: (() => void) | undefined;
   let cleanupUnits: (() => void) | undefined;
   let cleanupQuanta: (() => void) | undefined;
+  let cleanupWrecks: (() => void) | undefined;
   let cleanupSensor: (() => void) | undefined;
   let loading = $state(true);
   let degraded = $state(false);
@@ -446,6 +448,7 @@
         cleanupRoutes = addRouteLayer(m);
         cleanupSensor = addSensorLayer(m);
         cleanupQuanta = addQuantaLayer(m);
+        cleanupWrecks = addWreckLayer(m);
         cleanupNodes = addNodeLayer(m);
         cleanupUnits = addUnitLayer(m);
 
@@ -469,6 +472,7 @@
       disposed = true;
       cleanupUnits?.();
       cleanupNodes?.();
+      cleanupWrecks?.();
       cleanupQuanta?.();
       cleanupSensor?.();
       cleanupRoutes?.();

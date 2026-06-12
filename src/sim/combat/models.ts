@@ -88,7 +88,9 @@ export const UnitSchema = z.object({
   id: z.string(),
   name: z.string(),
   chassisId: z.string(),
-  side: z.enum(['player', 'hostile']),
+  /** neutral: NPC convoys — hostiles prey on them, players may turn
+   *  pirate with an explicit attack order, they never fire back */
+  side: z.enum(['player', 'hostile', 'neutral']),
   lat: z.number(),
   lng: z.number(),
   /** Component stacks per location id, ordered outermost-first */

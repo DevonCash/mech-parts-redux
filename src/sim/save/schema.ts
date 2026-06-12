@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { Commodity, NodeMarketSchema, QuantumSchema } from '../economy/models'
+import { CargoWreckSchema } from '../economy/convoys'
 import { BoardSchema, ContractSchema } from '../contracts/models'
 import { UnitSchema } from '../combat/models'
 import { PilotSchema } from '../pilots/models'
@@ -55,6 +56,9 @@ export const SessionStateSchema = z.object({
   garage: z.array(UnitSchema),
   crawlerDock: z.string().nullable(),
   quanta: z.array(QuantumSchema),
+  // defaults keep pre-convoy-war saves loadable
+  wrecks: z.array(CargoWreckSchema).default([]),
+  bandRaids: z.record(z.string(), z.number()).default({}),
   pilots: z.array(PilotSchema),
   // defaults keep pre-recruitment v6 saves loadable
   hirePools: z.record(z.string(), HirePoolSchema).default({}),

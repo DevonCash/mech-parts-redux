@@ -17,12 +17,18 @@ import { company } from './company'
 import { markets } from './market'
 import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
-import { nodes, quanta, routes } from './world'
+import { nodes, quanta, routes, wrecks } from './world'
 import { crawlerDock, garage, mechLots, units } from './units'
 import { hirePools, pilots } from './pilots'
 import { reputation } from './reputation'
 import { intel } from './intel'
-import { raiderRespawnAt, raiderSerial, rngState, sessionStats } from './session-stats'
+import {
+  bandRaids,
+  raiderRespawnAt,
+  raiderSerial,
+  rngState,
+  sessionStats,
+} from './session-stats'
 
 export { rngState, sessionStats }
 
@@ -51,6 +57,8 @@ export function gatherSessionState(): SessionState {
     garage: garage.get(),
     crawlerDock: crawlerDock.get(),
     quanta: quanta.get(),
+    wrecks: wrecks.get(),
+    bandRaids: bandRaids.get(),
     pilots: pilots.get(),
     hirePools: hirePools.get(),
     mechLots: mechLots.get(),
@@ -77,6 +85,8 @@ export function applySessionState(state: SessionState): void {
   garage.set(state.garage)
   crawlerDock.set(state.crawlerDock)
   quanta.set(state.quanta)
+  wrecks.set(state.wrecks)
+  bandRaids.set(state.bandRaids)
   pilots.set(state.pilots)
   hirePools.set(state.hirePools)
   mechLots.set(state.mechLots)

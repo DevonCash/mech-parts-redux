@@ -68,11 +68,19 @@
             {:else if contract.type === "security"}
               <span class="cargo combat">PATROL — BAND ({contract.hostiles})</span>
               <span class="arrow">@</span>
+            {:else if contract.type === "escort"}
+              <span class="cargo escort">ESCORT {contract.quantity} {contract.commodity.toUpperCase()}</span>
+              <span class="arrow">→</span>
+            {:else if contract.type === "salvage"}
+              <span class="cargo escort">SALVAGE {contract.quantity} {contract.commodity.toUpperCase()}</span>
+              <span class="arrow">@</span>
             {:else}
               <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
               <span class="arrow">→</span>
             {/if}
-            <span class="dest">{nodeName(contract.destination)}</span>
+            <span class="dest">
+              {contract.type === "salvage" ? "WRECK SITE" : nodeName(contract.destination)}
+            </span>
           </div>
           <div class="row terms">
             <span class="faction" style="color: {FACTIONS[contract.faction].color}">
@@ -81,6 +89,8 @@
             <span class="pay">¤ {formatCredits(contract.pay)}</span>
             {#if expired}
               <span class="deadline red">EXPIRED</span>
+            {:else if contract.type === "escort"}
+              <span class="deadline">DEPARTS {formatTickDuration(contract.departTick - currentTick)}</span>
             {:else if contract.deadlineTick !== null}
               <span class="deadline">DUE {formatTickDuration(contract.deadlineTick - currentTick)}</span>
             {:else}
@@ -188,6 +198,10 @@
 
   .cargo.combat {
     color: #ff5050;
+  }
+
+  .cargo.escort {
+    color: #d0c040;
   }
 
   .arrow {

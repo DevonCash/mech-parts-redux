@@ -147,6 +147,55 @@ export const SECURITY_OFFER_RANGE_KM = 60
 /** Patrol deadline — generous, the target band doesn't move (~22 game-hours) */
 export const SECURITY_DEADLINE_TICKS = 800000
 
+// ── Convoy war ──────────────────────────────────────────────────────
+// Raiders prey on NPC hauler convoys: a band sorties on a passing
+// convoy when its raid cooldown has expired (deterministic — no dice).
+// Escorts guard named convoys; wrecks feed the salvage business.
+
+/** Ticks between convoy threat scans (~1.1 km of convoy motion) */
+export const CONVOY_THREAT_INTERVAL = 500
+
+/** Convoys materialize as units within this of a hungry camp
+ *  (== TECHNICAL_LEASH_KM so a materialized convoy is engageable) */
+export const CONVOY_THREAT_RADIUS_KM = 10
+
+/** Minimum ticks between sorties per band (~2.5 game-hours) */
+export const RAID_COOLDOWN_TICKS = 90_000
+
+/** Share of a raided convoy's cargo the band hauls back to camp */
+export const RAID_LOOT_FRACTION = 0.4
+
+/** Convoys also materialize this close to a player unit (piracy reach) */
+export const PIRACY_RANGE_KM = 3
+
+/** Ticks between an escort offer's posting and the convoy's departure
+ *  (1 game-hour to pre-position or pre-clear) */
+export const ESCORT_DEPART_DELAY_TICKS = 36_000
+
+/** Escort offers per board refresh */
+export const ESCORT_OFFERS_MAX = 1
+
+/** Flat component of escort pay */
+export const ESCORT_PAY_BASE = 600
+
+/** Escort pay per raider in the named band */
+export const ESCORT_PAY_PER_RAIDER = 600
+
+/** Escort pay as a fraction of the shipment's credit value */
+export const ESCORT_PAY_VALUE_FACTOR = 0.4
+
+/** Wrecks within this of a node appear on its board as salvage work */
+export const SALVAGE_OFFER_RANGE_KM = 80
+
+/** Salvage pay as a fraction of the recovered cargo's credit value */
+export const SALVAGE_PAY_VALUE_FACTOR = 0.5
+
+/** Unlooted wreck lifetime (~6.7 game-hours) */
+export const WRECK_TTL_TICKS = 240_000
+
+/** Crawler must be this close to loot a wreck (matches recall range) */
+export const LOOT_RANGE_KM = 2
+
 // ── Recruitment & acquisition ───────────────────────────────────────
 
 /** Flat component of a pilot's signing bonus */

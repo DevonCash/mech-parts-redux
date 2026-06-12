@@ -63,7 +63,7 @@ export function deliverContract(
   company: CompanyState,
   contract: Contract,
 ): DeliveryResult {
-  if (contract.type !== 'hauling') {
+  if (contract.type !== 'hauling' && contract.type !== 'salvage') {
     return { ok: false, reason: 'NOT A DELIVERY CONTRACT' }
   }
   const held = company.cargo[contract.commodity] ?? 0

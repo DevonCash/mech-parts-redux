@@ -144,6 +144,7 @@ export function addUnitLayer(map: MaplibreMap): () => void {
         'case',
         ['get', 'dead'], 'rgba(120, 120, 120, 0.5)',
         ['==', ['get', 'side'], 'player'], '#00ff88',
+        ['==', ['get', 'side'], 'neutral'], '#d0c040',
         '#ff5050',
       ],
       'circle-stroke-color': '#0a0a0a',
@@ -201,7 +202,8 @@ export function addUnitLayer(map: MaplibreMap): () => void {
       if (props?.dead) return
       if (props?.side === 'player') {
         selectedUnit.set(props.id)
-      } else if (props?.side === 'hostile') {
+      } else if (props?.side === 'hostile' || props?.side === 'neutral') {
+        // Attacking a neutral convoy is piracy — allowed, remembered.
         const sel = selectedUnit.get()
         if (sel) setUnitOrder(sel, { kind: 'attack', targetId: props.id })
       }
