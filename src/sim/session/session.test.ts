@@ -3,13 +3,17 @@ import { seedNodes } from '../economy/seed-nodes'
 import { generateSeedRoutes } from '../economy/seed-routes'
 import type { WorldStatic } from '../contracts/generate'
 import { createSession, START_NODE } from './new-game'
-import { advanceTick, FUEL_BURN_PER_TICK } from './pipeline'
+import { advanceTick, findCrawler, FUEL_BURN_PER_TICK } from './pipeline'
 import { checkEndConditions } from './end-conditions'
 import { decodeSave, encodeSave } from '../save/schema'
 import { travelTicks, routeMetrics } from '../contracts/generate'
-import { createEngagement } from '../combat/engagement'
+import { buildRoadMoveOrder } from '../combat/orders'
+import { spawnHostiles } from '../combat/strategic'
+import { unitDestroyed } from '../combat/damage'
+import { CRAWLER_UNIT_ID } from '../combat/catalog'
 import { makeRng } from '../rng'
 import { EMERGENCY_RESUPPLY_COST } from '../balance'
+import type { CombatContract } from '../contracts/models'
 import type { SessionState } from './state'
 
 const world: WorldStatic = {
@@ -17,22 +21,16 @@ const world: WorldStatic = {
   routes: Object.fromEntries(generateSeedRoutes(seedNodes).map((r) => [r.id, r])),
 }
 
-/** Put the session crawler en route to a directly-connected node. */
-function depart(state: SessionState): SessionState {
-  const route = Object.values(world.routes).find(
-    (r) => r.from === START_NODE || r.to === START_NODE,
-  )!
-  const reversed = route.to === START_NODE
+/** Issue a road move order from the start node to a connected node. */
+function depart(state: SessionState, targetNodeId = 'chryse-landing'): SessionState {
+  const order = buildRoadMoveOrder(START_NODE, targetNodeId, world.nodes, world.routes)
+  if (!order) throw new Error('no road path')
   return {
     ...state,
-    crawler: {
-      ...state.crawler,
-      currentNode: null,
-      currentRoute: route.id,
-      routeReversed: reversed,
-      routeProgress: 0,
-      destination: reversed ? route.from : route.to,
-    },
+    crawlerDock: null,
+    units: state.units.map((u) =>
+      u.id === CRAWLER_UNIT_ID ? { ...u, order } : u,
+    ),
   }
 }
 
@@ -42,16 +40,31 @@ function runTicks(state: SessionState, n: number): SessionState {
   return s
 }
 
+function endCheckInput(s: SessionState) {
+  return {
+    tick: s.tick,
+    crawler: findCrawler(s.units),
+    crawlerDock: s.crawlerDock,
+    company: s.company,
+    markets: s.markets,
+    routes: world.routes,
+    active: s.active,
+    creditTarget: s.params.creditTarget,
+  }
+}
+
 describe('createSession', () => {
   it('is deterministic per seed', () => {
     expect(createSession(123, world)).toEqual(createSession(123, world))
   })
 
-  it('starts docked with a board at the start node', () => {
+  it('starts docked with a board, a crawler unit, and a garaged lance', () => {
     const s = createSession(1, world)
-    expect(s.crawler.currentNode).toBe(START_NODE)
+    expect(s.crawlerDock).toBe(START_NODE)
+    expect(findCrawler(s.units)).toBeDefined()
+    expect(s.units).toHaveLength(1)
+    expect(s.garage).toHaveLength(2)
     expect(s.boards[START_NODE].contracts.length).toBeGreaterThan(0)
-    expect(s.markets[START_NODE]).toBeDefined()
   })
 })
 
@@ -62,7 +75,7 @@ describe('advanceTick', () => {
     expect(a).toEqual(b)
   })
 
-  it('burns fuel only while in transit', () => {
+  it('burns fuel only while the crawler executes a move order', () => {
     const docked = createSession(1, world)
     expect(runTicks(docked, 100).company.fuel).toBe(docked.company.fuel)
 
@@ -76,16 +89,18 @@ describe('advanceTick', () => {
     s.company = { ...s.company, fuel: 10 * FUEL_BURN_PER_TICK }
     const after = runTicks(s, 100)
     expect(after.company.fuel).toBe(0)
-    expect(after.crawler.currentRoute).not.toBeNull()
-    // Progress frozen after the fuel ran dry
+    const crawler = findCrawler(after.units)!
+    expect(crawler.order.kind).toBe('move')
+    // Position frozen after the fuel ran dry
     const later = runTicks(after, 100)
-    expect(later.crawler.routeProgress).toBe(after.crawler.routeProgress)
+    const crawlerLater = findCrawler(later.units)!
+    expect(crawlerLater.lat).toBe(crawler.lat)
   })
 
-  it('completes travel and emits an arrival event', () => {
-    const s = depart(createSession(1, world))
-    const route = world.routes[s.crawler.currentRoute!]
-    const needed = travelTicks(route.distance * route.terrain) + 10
+  it('completes a road trip: docks, emits arrival, regenerates the board', () => {
+    const s = depart(createSession(2, world))
+    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
+    const needed = travelTicks(metrics.effectiveKm) + 60
 
     let current = s
     let arrived = false
@@ -95,26 +110,16 @@ describe('advanceTick', () => {
       if (r.events.some((e) => e.kind === 'arrival')) arrived = true
     }
     expect(arrived).toBe(true)
-    expect(current.crawler.currentNode).toBe(s.crawler.destination)
+    expect(current.crawlerDock).toBe('chryse-landing')
+    expect(findCrawler(current.units)!.order.kind).toBe('hold')
+    expect(current.boards['chryse-landing']).toBeDefined()
+    expect(current.boards['chryse-landing'].contracts.length).toBeGreaterThan(0)
   })
 
   it('does nothing after an end state is set', () => {
     const s = createSession(1, world)
     const ended = { ...s, endState: { kind: 'victory' as const, tick: s.tick } }
     expect(advanceTick(ended, world).state).toBe(ended)
-  })
-
-  it('regenerates the board when docking at a node with a stale board', () => {
-    const s = depart(createSession(2, world))
-    const destination = s.crawler.destination!
-    expect(s.boards[destination]).toBeUndefined()
-
-    const route = world.routes[s.crawler.currentRoute!]
-    const needed = travelTicks(route.distance * route.terrain) + 10
-    const after = runTicks(s, needed)
-    expect(after.crawler.currentNode).toBe(destination)
-    expect(after.boards[destination]).toBeDefined()
-    expect(after.boards[destination].contracts.length).toBeGreaterThan(0)
   })
 
   it('declares victory when credits reach the target', () => {
@@ -133,16 +138,7 @@ describe('checkEndConditions', () => {
       ...s,
       company: { ...s.company, fuel: 0, credits: EMERGENCY_RESUPPLY_COST - 1 },
     }
-    const end = checkEndConditions({
-      tick: broke.tick,
-      crawler: broke.crawler,
-      company: broke.company,
-      markets: broke.markets,
-      routes: world.routes,
-      active: broke.active,
-      creditTarget: broke.params.creditTarget,
-    })
-    expect(end?.kind).toBe('stranded')
+    expect(checkEndConditions(endCheckInput(broke))?.kind).toBe('stranded')
   })
 
   it('does not strand when emergency resupply is affordable', () => {
@@ -151,16 +147,7 @@ describe('checkEndConditions', () => {
       ...s,
       company: { ...s.company, fuel: 0, credits: EMERGENCY_RESUPPLY_COST },
     }
-    const end = checkEndConditions({
-      tick: solvent.tick,
-      crawler: solvent.crawler,
-      company: solvent.company,
-      markets: solvent.markets,
-      routes: world.routes,
-      active: solvent.active,
-      creditTarget: solvent.params.creditTarget,
-    })
-    expect(end).toBeNull()
+    expect(checkEndConditions(endCheckInput(solvent))).toBeNull()
   })
 
   it('bankrupts a docked company with no fuel, credits, or cargo', () => {
@@ -169,30 +156,128 @@ describe('checkEndConditions', () => {
       ...s,
       company: { ...s.company, fuel: 0, credits: 0, cargo: {} },
     }
-    const end = checkEndConditions({
-      tick: destitute.tick,
-      crawler: destitute.crawler,
-      company: destitute.company,
-      markets: destitute.markets,
-      routes: world.routes,
-      active: destitute.active,
-      creditTarget: destitute.params.creditTarget,
-    })
-    expect(end?.kind).toBe('bankrupt')
+    expect(checkEndConditions(endCheckInput(destitute))?.kind).toBe('bankrupt')
+  })
+
+  it('reports destroyed when the crawler unit is gone', () => {
+    const s = createSession(1, world)
+    const headless = { ...s, units: s.units.filter((u) => u.id !== CRAWLER_UNIT_ID) }
+    expect(checkEndConditions(endCheckInput(headless))?.kind).toBe('destroyed')
   })
 
   it('a docked company with money is not bankrupt', () => {
     const s = createSession(1, world)
-    const end = checkEndConditions({
-      tick: s.tick,
-      crawler: s.crawler,
-      company: s.company,
-      markets: s.markets,
-      routes: world.routes,
-      active: s.active,
-      creditTarget: s.params.creditTarget,
-    })
-    expect(end).toBeNull()
+    expect(checkEndConditions(endCheckInput(s))).toBeNull()
+  })
+})
+
+describe('strategic combat through the pipeline', () => {
+  function withCombatContract(seed: number, hostiles: number): SessionState {
+    let s = createSession(seed, world)
+    const contract: CombatContract = {
+      id: 'combat-test',
+      type: 'combat',
+      origin: START_NODE,
+      destination: START_NODE,
+      hostiles,
+      pay: 5000,
+      faction: 'settler',
+      postedTick: 0,
+      deadlineTick: null,
+      boardExpiryTick: 999999,
+      status: 'active',
+    }
+    const rng = makeRng(s.rngState)
+    const site = world.nodes[START_NODE]
+    s = {
+      ...s,
+      active: [contract],
+      units: [...s.units, ...spawnHostiles(contract, site.position, rng)],
+      rngState: rng.state,
+      // Field the lance at the site
+      garage: [],
+    }
+    s = {
+      ...s,
+      units: [
+        ...s.units,
+        ...createSession(seed, world).garage.map((u, i) => ({
+          ...u,
+          lat: site.position[0] - 0.02,
+          lng: site.position[1] + i * 0.01,
+        })),
+      ],
+    }
+    return s
+  }
+
+  it('clearing the garrison completes the contract: pay, salvage, rep', () => {
+    let s = withCombatContract(3, 2)
+    const creditsBefore = s.company.credits
+    const repBefore = s.reputation.settler
+
+    let completed = false
+    for (let i = 0; i < 80000; i++) {
+      const r = advanceTick(s, world)
+      s = r.state
+      if (r.events.some((e) => e.kind === 'contract-completed')) {
+        completed = true
+        break
+      }
+      if (!s.units.some((u) => u.side === 'player' && !unitDestroyed(u))) break
+    }
+
+    if (completed) {
+      expect(s.company.credits).toBeGreaterThanOrEqual(creditsBefore + 5000)
+      expect(s.active).toHaveLength(0)
+      expect(s.reputation.settler).toBeGreaterThan(repBefore)
+      expect(s.units.every((u) => u.side !== 'hostile')).toBe(true)
+      expect(s.stats.contractsCompleted).toBe(1)
+    } else {
+      // A lost fight is also decisive — the run must not stall.
+      expect(s.units.some((u) => u.side === 'hostile')).toBe(true)
+    }
+  }, 30000)
+
+  it('an engaged combat contract does not fail its deadline mid-fight', () => {
+    let s = withCombatContract(3, 2)
+    s = {
+      ...s,
+      active: s.active.map((c) => ({ ...c, deadlineTick: s.tick + 1 })),
+    }
+    for (let i = 0; i < 10; i++) s = advanceTick(s, world).state
+    // Player units are at the site → exempt; contract still active
+    // (unless it completed within 10 ticks, which it cannot).
+    expect(s.active.map((c) => c.id)).toEqual(['combat-test'])
+    expect(s.stats.contractsFailed).toBe(0)
+  })
+
+  it('an unengaged combat contract fails its deadline and the garrison stands down', () => {
+    let s = createSession(5, world)
+    const contract: CombatContract = {
+      id: 'combat-far',
+      type: 'combat',
+      origin: START_NODE,
+      destination: 'elysium-mine', // far from the docked crawler
+      hostiles: 2,
+      pay: 5000,
+      faction: 'corporate',
+      postedTick: 0,
+      deadlineTick: s.tick + 1,
+      boardExpiryTick: 999999,
+      status: 'active',
+    }
+    const rng = makeRng(s.rngState)
+    s = {
+      ...s,
+      active: [contract],
+      units: [...s.units, ...spawnHostiles(contract, world.nodes['elysium-mine'].position, rng)],
+      rngState: rng.state,
+    }
+    for (let i = 0; i < 5; i++) s = advanceTick(s, world).state
+    expect(s.active).toHaveLength(0)
+    expect(s.stats.contractsFailed).toBe(1)
+    expect(s.units.some((u) => u.contractId === 'combat-far')).toBe(false)
   })
 })
 
@@ -217,107 +302,6 @@ describe('save round-trip', () => {
   })
 })
 
-describe('engagement through the pipeline', () => {
-  it('an engaged contract does not fail its deadline mid-fight', () => {
-    let s = createSession(3, world)
-    const contract = {
-      id: 'combat-late',
-      type: 'combat' as const,
-      origin: START_NODE,
-      destination: START_NODE,
-      hostiles: 2,
-      pay: 5000,
-      faction: 'settler' as const,
-      postedTick: 0,
-      deadlineTick: s.tick + 1, // passes immediately
-      boardExpiryTick: 999999,
-      status: 'active' as const,
-    }
-    const rng = makeRng(s.rngState)
-    const node = world.nodes[START_NODE]
-    s = {
-      ...s,
-      active: [contract],
-      engagement: createEngagement(
-        contract.id,
-        START_NODE,
-        node.position,
-        s.forces,
-        s.pilots,
-        contract.hostiles,
-        rng,
-        s.tick,
-      ),
-      rngState: rng.state,
-    }
-    // Run well past the deadline but not long enough to resolve the fight.
-    for (let i = 0; i < 10; i++) s = advanceTick(s, world).state
-    expect(s.engagement?.status).toBe('active')
-    expect(s.active.map((c) => c.id)).toEqual(['combat-late'])
-    expect(s.stats.contractsFailed).toBe(0)
-  })
-
-  it('a won engagement completes the contract: pay, salvage, mech damage persists', () => {
-    let s = createSession(3, world)
-    const contract = {
-      id: 'combat-test',
-      type: 'combat' as const,
-      origin: START_NODE,
-      destination: START_NODE,
-      hostiles: 2,
-      pay: 5000,
-      faction: 'settler' as const,
-      postedTick: 0,
-      deadlineTick: null,
-      boardExpiryTick: 999999,
-      status: 'active' as const,
-    }
-    s = { ...s, active: [contract] }
-
-    // Deploy at the docked node (what the store's deploy action does).
-    const rng = makeRng(s.rngState)
-    const node = world.nodes[START_NODE]
-    s = {
-      ...s,
-      engagement: createEngagement(
-        contract.id,
-        START_NODE,
-        node.position,
-        s.forces,
-        s.pilots,
-        contract.hostiles,
-        rng,
-        s.tick,
-      ),
-      rngState: rng.state,
-    }
-
-    const creditsBefore = s.company.credits
-    let won = false
-    for (let i = 0; i < 80000 && s.engagement !== null; i++) {
-      const r = advanceTick(s, world)
-      s = r.state
-      if (r.events.some((e) => e.kind === 'engagement-won')) won = true
-      if (r.events.some((e) => e.kind === 'engagement-lost')) break
-    }
-
-    expect(s.engagement).toBeNull()
-    if (won) {
-      expect(s.company.credits).toBe(creditsBefore + contract.pay)
-      expect(s.active).toHaveLength(0)
-      expect(s.stats.contractsCompleted).toBe(1)
-      // Salvage landed in the hold
-      expect((s.company.cargo.metal ?? 0)).toBeGreaterThan(0)
-    } else {
-      // Loss is also a valid decisive outcome — contract failed.
-      expect(s.active).toHaveLength(0)
-      expect(s.stats.contractsFailed).toBe(1)
-    }
-    // Either way the roster only contains survivors with persistent damage.
-    expect(s.forces.length).toBeLessThanOrEqual(2)
-  }, 30000)
-})
-
 describe('intel — fog of war', () => {
   it('starts knowing only the home port', () => {
     const s = createSession(1, world)
@@ -333,7 +317,6 @@ describe('intel — fog of war', () => {
 
   it('intel for distant nodes stays stale until visited', () => {
     let s = createSession(1, world)
-    // Far node on the other side of the planet from valles-hub
     expect(s.intel['elysium-mine']).toBeUndefined()
     s = runTicks(s, 500)
     expect(s.intel['elysium-mine']).toBeUndefined()
@@ -341,25 +324,22 @@ describe('intel — fog of war', () => {
 
   it('arrival at a node yields fresh intel for it', () => {
     const s = depart(createSession(1, world))
-    const destination = s.crawler.destination!
-    expect(s.intel[destination]).toBeUndefined()
+    expect(s.intel['chryse-landing']).toBeUndefined()
 
-    const route = world.routes[s.crawler.currentRoute!]
-    const needed = travelTicks(route.distance * route.terrain) + 60
+    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
+    const needed = travelTicks(metrics.effectiveKm) + 120
     const after = runTicks(s, needed)
-    expect(after.crawler.currentNode).toBe(destination)
-    expect(after.intel[destination]).toBeDefined()
-    expect(after.intel[destination].observedTick).toBeGreaterThan(0)
+    expect(after.crawlerDock).toBe('chryse-landing')
+    expect(after.intel['chryse-landing']).toBeDefined()
+    expect(after.intel['chryse-landing'].observedTick).toBeGreaterThan(0)
   })
 
   it('an observed snapshot does not change while out of range', () => {
     const s = depart(createSession(1, world))
-    const route = world.routes[s.crawler.currentRoute!]
-    const needed = travelTicks(route.distance * route.terrain) + 60
+    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
+    const needed = travelTicks(metrics.effectiveKm) + 120
     const arrived = runTicks(s, needed)
 
-    // Home port intel froze at (or before) departure-adjacent sweeps;
-    // running further while docked elsewhere must not refresh it.
     const homeSnapshot = arrived.intel[START_NODE]
     const later = runTicks(arrived, 500)
     expect(later.intel[START_NODE]).toBe(homeSnapshot)

@@ -26,6 +26,7 @@
     victory: "DEBT CLEARED",
     stranded: "CRAWLER STRANDED",
     bankrupt: "COMPANY DISSOLVED",
+    destroyed: "SIGNAL LOST",
   };
 
   const DETAILS: Record<string, string> = {
@@ -35,6 +36,8 @@
       "Out of fuel, out of credits, out of reach. The dust will take the rest.",
     bankrupt:
       "Creditors seized the crawler and its server core. Command terminated.",
+    destroyed:
+      "The server core — you — burned with the crawler. The company scatters.",
   };
 </script>
 

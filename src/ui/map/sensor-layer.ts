@@ -3,7 +3,7 @@
  * company can currently observe. Everything outside is stale intel.
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
-import { crawler } from '../../stores/crawler'
+import { crawlerUnit, units } from '../../stores/units'
 import { SENSOR_RANGE_KM } from '../../sim/intel/models'
 import { MARS_RADIUS_KM } from '../../sim/constants'
 
@@ -47,8 +47,11 @@ function ringGeoJSON(latDeg: number, lngDeg: number) {
 }
 
 export function addSensorLayer(map: MaplibreMap): () => void {
-  const state = crawler.get()
-  map.addSource(SOURCE_ID, { type: 'geojson', data: ringGeoJSON(state.lat, state.lng) })
+  const crawler = crawlerUnit()
+  map.addSource(SOURCE_ID, {
+    type: 'geojson',
+    data: ringGeoJSON(crawler?.lat ?? 0, crawler?.lng ?? 0),
+  })
 
   map.addLayer({
     id: LAYER_ID,
@@ -69,12 +72,12 @@ export function addSensorLayer(map: MaplibreMap): () => void {
       pending = false
       const source = map.getSource(SOURCE_ID)
       if (source && 'setData' in source) {
-        const { lat, lng } = crawler.get()
-        ;(source as any).setData(ringGeoJSON(lat, lng))
+        const c = crawlerUnit()
+        if (c) (source as any).setData(ringGeoJSON(c.lat, c.lng))
       }
     })
   }
-  const unsubscribe = crawler.subscribe(refresh)
+  const unsubscribe = units.subscribe(refresh)
 
   return () => {
     unsubscribe()

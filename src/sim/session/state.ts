@@ -5,16 +5,15 @@
  * layer holds the same data split into atoms for the UI; it is gathered
  * into a SessionState for tick batches and saves, then written back.
  */
-import type { CrawlerState } from '../../stores/crawler'
 import type { CompanyState } from '../economy/market'
 import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
-import type { Engagement, Unit } from '../combat/models'
+import type { Unit } from '../combat/models'
 import type { Pilot } from '../pilots/models'
 import type { Reputation } from '../factions/models'
 import type { IntelMap } from '../intel/models'
 
-export type EndKind = 'victory' | 'stranded' | 'bankrupt'
+export type EndKind = 'victory' | 'stranded' | 'bankrupt' | 'destroyed'
 
 export interface EndState {
   kind: EndKind
@@ -37,15 +36,17 @@ export interface SessionStats {
 export interface SessionState {
   tick: number
   rngState: number
-  crawler: CrawlerState
   company: CompanyState
   markets: Record<string, NodeMarket>
   boards: Record<string, Board>
   active: Contract[]
-  /** The company's mech roster (damage persists between engagements) */
-  forces: Unit[]
-  /** The current engagement, if mechs are deployed */
-  engagement: Engagement | null
+  /** Every strategic actor on the map: crawler, deployed mechs,
+   *  hostile garrisons (and their wrecks until salvaged) */
+  units: Unit[]
+  /** Mechs carried by the crawler — the crawler is their transport */
+  garage: Unit[]
+  /** Node id while the crawler sits docked at a node */
+  crawlerDock: string | null
   /** NPC economy agents */
   quanta: Quantum[]
   /** The company's pilot roster */
@@ -67,13 +68,12 @@ export type GameEventKind =
   | 'contract-completed'
   | 'contract-failed'
   | 'unit-destroyed'
-  | 'engagement-won'
-  | 'engagement-lost'
+  | 'combat-contact'
   | 'pilot-kia'
-  | 'pilot-breakdown'
   | 'victory'
   | 'stranded'
   | 'bankrupt'
+  | 'destroyed'
 
 export interface GameEvent {
   tick: number

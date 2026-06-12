@@ -59,9 +59,26 @@ export const ComponentInstanceSchema = z.object({
 })
 export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>
 
+/**
+ * One order vocabulary for every unit on the map — mechs and the
+ * crawler alike (universality: same commands, same executor).
+ *
+ * A move order is a waypoint path. Ground clicks issue a single open
+ * waypoint; road travel issues the route polyline with mode 'road'
+ * (roads are infrastructure: double ground speed, but they carry the
+ * route's ambush danger — raiders watch the roads).
+ */
 export const UnitOrderSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('hold') }),
-  z.object({ kind: z.literal('move'), lat: z.number(), lng: z.number() }),
+  z.object({
+    kind: z.literal('move'),
+    waypoints: z.array(z.tuple([z.number(), z.number()])),
+    mode: z.enum(['open', 'road']),
+    /** Ambush risk while executing, baked at issue time */
+    danger: z.number(),
+    /** Dock at this node on arrival (crawler) */
+    dockNodeId: z.string().optional(),
+  }),
   z.object({ kind: z.literal('attack'), targetId: z.string() }),
 ])
 export type UnitOrder = z.infer<typeof UnitOrderSchema>
@@ -80,19 +97,11 @@ export const UnitSchema = z.object({
   cooldowns: z.record(z.string(), z.number()),
   /** Roster pilot assigned to this unit (player units) */
   pilotId: z.string().optional(),
+  /** NPC pilot carried inline (hostiles) — same model, scrappier rolls */
+  npcPilot: PilotSchema.optional(),
+  /** Combat contract this unit belongs to (hostile garrisons) */
+  contractId: z.string().optional(),
+  /** Leash anchor — hostiles hunt near here and return when unengaged */
+  spawn: z.tuple([z.number(), z.number()]).optional(),
 })
 export type Unit = z.infer<typeof UnitSchema>
-
-export const EngagementSchema = z.object({
-  id: z.string(),
-  contractId: z.string(),
-  siteNodeId: z.string(),
-  units: z.array(UnitSchema),
-  /** Pilot state per unit id for the engagement's duration — player
-   *  pilots are copied in at deploy and written back at the end;
-   *  hostile pilots live and die here. Same model both sides. */
-  pilots: z.record(z.string(), PilotSchema),
-  status: z.enum(['active', 'won', 'lost']),
-  startedTick: z.number(),
-})
-export type Engagement = z.infer<typeof EngagementSchema>

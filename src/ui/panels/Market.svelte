@@ -1,7 +1,7 @@
 <script lang="ts">
   import { markets, tradeCommodity, buyFuel } from "../../stores/market";
   import { company } from "../../stores/company";
-  import { crawler } from "../../stores/crawler";
+  import { crawlerDock } from "../../stores/units";
   import { openPanel } from "../../stores/ui";
   import { COMMODITIES, type Commodity } from "../../sim/economy/models";
   import { cargoUsed, quote } from "../../sim/economy/market";
@@ -9,21 +9,19 @@
 
   let marketMap = $state(markets.get());
   let companyState = $state(company.get());
-  let crawlerState = $state(crawler.get());
+  let dock = $state(crawlerDock.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
     const unsubs = [
       markets.subscribe((v) => (marketMap = v)),
       company.subscribe((v) => (companyState = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      crawlerDock.subscribe((v) => (dock = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
 
-  let market = $derived(
-    crawlerState.currentNode ? marketMap[crawlerState.currentNode] : undefined,
-  );
+  let market = $derived(dock ? marketMap[dock] : undefined);
 
   function trade(commodity: Commodity, qty: number, side: "buy" | "sell") {
     const result = tradeCommodity(commodity, qty, side);

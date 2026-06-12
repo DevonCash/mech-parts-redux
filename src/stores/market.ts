@@ -13,14 +13,14 @@ import { executeTrade, quote } from '../sim/economy/market'
 import type { Commodity, NodeMarket } from '../sim/economy/models'
 import { round2 } from '../sim/economy/seed-market'
 import { company } from './company'
-import { crawler } from './crawler'
+import { crawlerDock, crawlerUnit, type ActionResult } from './units'
 
 export const markets = atom<Record<string, NodeMarket>>({})
 
-export type ActionResult = { ok: true } | { ok: false; reason: string }
+export type { ActionResult }
 
 function dockedMarket(): { nodeId: string; market: NodeMarket } | null {
-  const nodeId = crawler.get().currentNode
+  const nodeId = crawlerDock.get()
   if (!nodeId) return null
   const market = markets.get()[nodeId]
   return market ? { nodeId, market } : null
@@ -75,9 +75,9 @@ export function buyFuel(qty: number): ActionResult {
  * for enough fuel to limp to the next node.
  */
 export function emergencyResupply(): ActionResult {
-  const state = crawler.get()
+  const crawler = crawlerUnit()
   const c = company.get()
-  if (state.currentRoute === null || c.fuel > 0) {
+  if (crawler?.order.kind !== 'move' || c.fuel > 0) {
     return { ok: false, reason: 'NOT STRANDED' }
   }
   if (c.credits < EMERGENCY_RESUPPLY_COST) {

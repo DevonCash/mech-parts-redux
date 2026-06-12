@@ -1,6 +1,6 @@
 <script lang="ts">
   import { boards, activeContracts, acceptContract } from "../../stores/contracts";
-  import { crawler } from "../../stores/crawler";
+  import { crawlerDock } from "../../stores/units";
   import { nodes } from "../../stores/world";
   import { tick } from "../../stores/time";
   import { openPanel } from "../../stores/ui";
@@ -11,7 +11,7 @@
 
   let boardMap = $state(boards.get());
   let active = $state<readonly Contract[]>(activeContracts.get());
-  let crawlerState = $state(crawler.get());
+  let dock = $state(crawlerDock.get());
   let nodeMap = $state(nodes.get());
   let currentTick = $state(tick.get());
   let rep = $state(reputation.get());
@@ -21,7 +21,7 @@
     const unsubs = [
       boards.subscribe((v) => (boardMap = v)),
       activeContracts.subscribe((v) => (active = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      crawlerDock.subscribe((v) => (dock = v)),
       nodes.subscribe((v) => (nodeMap = v)),
       tick.subscribe((v) => (currentTick = v)),
       reputation.subscribe((v) => (rep = v)),
@@ -31,7 +31,7 @@
 
   let slots = $derived(contractSlots(rep));
 
-  let dockedNode = $derived(crawlerState.currentNode);
+  let dockedNode = $derived(dock);
   let board = $derived(dockedNode ? boardMap[dockedNode] : undefined);
   let contracts = $derived(board?.contracts ?? []);
 

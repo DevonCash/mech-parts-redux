@@ -1,6 +1,8 @@
 <script lang="ts">
   import { company } from "../../stores/company";
-  import { crawler } from "../../stores/crawler";
+  import { units } from "../../stores/units";
+  import { CRAWLER_UNIT_ID } from "../../sim/combat/catalog";
+  import type { Unit } from "../../sim/combat/models";
   import { emergencyResupply } from "../../stores/market";
   import { pushEvents } from "../../stores/events";
   import { tick } from "../../stores/time";
@@ -9,18 +11,19 @@
   import { formatCredits } from "../format";
 
   let companyState = $state(company.get());
-  let crawlerState = $state(crawler.get());
+  let allUnits = $state<readonly Unit[]>(units.get());
 
   $effect(() => {
     const unsubs = [
       company.subscribe((v) => (companyState = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      units.subscribe((v) => (allUnits = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
 
   let halted = $derived(
-    crawlerState.currentRoute !== null && companyState.fuel <= 0,
+    allUnits.find((u) => u.id === CRAWLER_UNIT_ID)?.order.kind === "move" &&
+      companyState.fuel <= 0,
   );
   let canAfford = $derived(companyState.credits >= EMERGENCY_RESUPPLY_COST);
 

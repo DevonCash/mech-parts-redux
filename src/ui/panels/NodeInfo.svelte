@@ -3,13 +3,15 @@
   import { nodes, routes } from "../../stores/world";
   import { intel } from "../../stores/intel";
   import { tick } from "../../stores/time";
-  import { crawler } from "../../stores/crawler";
+  import { crawlerDock, units } from "../../stores/units";
   import { FRESH_TICKS } from "../../sim/intel/models";
   import { formatTickDuration } from "../format";
   import { travelTo, travelOverland, cancelTravel } from "../../stores/travel";
   import { togglePanel } from "../../stores/ui";
-  import { CRAWLER_SPEED_KM_S, currentRouteOf } from "../../sim/crawler/movement";
-  import { buildOverlandRoute, OFFROAD_TERRAIN } from "../../sim/crawler/overland";
+  import { CRAWLER_SPEED_KM_S } from "../../sim/crawler/movement";
+  import { remainingKm, ROAD_SPEED_MULT } from "../../sim/combat/orders";
+  import { CRAWLER_UNIT_ID } from "../../sim/combat/catalog";
+  import { marsDistance } from "../../sim/constants";
   import { routeMetrics } from "../../sim/contracts/generate";
   import { FACTIONS, nodeFaction } from "../../sim/factions/models";
   import type { GameNode } from "../../sim/economy/models";
@@ -17,7 +19,8 @@
   let currentSelection = $state(selection.get());
   let nodeMap = $state(nodes.get());
   let routeMap = $state(routes.get());
-  let crawlerState = $state(crawler.get());
+  let allUnits = $state(units.get());
+  let dock = $state(crawlerDock.get());
   let intelMap = $state(intel.get());
   let currentTick = $state(tick.get());
 
@@ -26,12 +29,15 @@
       selection.subscribe((v) => (currentSelection = v)),
       nodes.subscribe((v) => (nodeMap = v)),
       routes.subscribe((v) => (routeMap = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      units.subscribe((v) => (allUnits = [...v])),
+      crawlerDock.subscribe((v) => (dock = v)),
       intel.subscribe((v) => (intelMap = v)),
       tick.subscribe((v) => (currentTick = v)),
     ];
     return () => unsubs.forEach(u => u());
   });
+
+  let crawler = $derived(allUnits.find((u) => u.id === CRAWLER_UNIT_ID) ?? null);
 
   // Node state comes from the player's intel snapshots, not ground
   // truth — stale data is the design (intelligence.md).
@@ -57,61 +63,39 @@
   );
 
   // Is the crawler docked at this node?
-  let isDockedHere = $derived(
-    node !== null && crawlerState.currentNode === node.id
-  );
+  let isDockedHere = $derived(node !== null && dock === node.id);
 
-  // Is the crawler docked somewhere and can we reach this node?
-  let canTravel = $derived(() => {
-    if (!node || !crawlerState.currentNode) return false;
-    if (crawlerState.currentNode === node.id) return false;
-    // Any node is potentially reachable — travelTo handles pathfinding
-    return true;
-  });
+  // Is the crawler currently executing a move order?
+  let isTraveling = $derived(crawler?.order.kind === "move");
 
-  // Is the crawler currently traveling?
-  let isTraveling = $derived(crawlerState.currentRoute !== null);
-
-  // Is this the destination?
+  // Is this node the crawler's dock target?
   let isDestination = $derived(
-    node !== null && crawlerState.destination === node.id
+    node !== null &&
+      crawler?.order.kind === "move" &&
+      crawler.order.dockNodeId === node.id,
   );
 
-  // Effective km (distance × terrain) for both travel modes to this node
+  // Effective km (cost-comparable: time and fuel both scale with it)
+  // for both travel modes to this node
   let travelOptions = $derived(() => {
-    if (!node || !crawlerState.currentNode || crawlerState.currentNode === node.id) {
-      return null;
-    }
-    const from = nodeMap[crawlerState.currentNode];
-    if (!from) return null;
-    const roads = routeMetrics(
-      { nodes: nodeMap, routes: routeMap },
-      crawlerState.currentNode,
-      node.id,
-    );
-    const overland = buildOverlandRoute(from, node);
+    if (!node || !crawler || isDockedHere) return null;
+    const roads = dock
+      ? routeMetrics({ nodes: nodeMap, routes: routeMap }, dock, node.id)
+      : null;
+    const directKm = marsDistance(crawler.lat, crawler.lng, node.position[0], node.position[1]);
     return {
       roadsKm: roads ? Math.round(roads.effectiveKm) : null,
-      overlandKm: Math.round(overland.distance * OFFROAD_TERRAIN),
+      directKm: Math.round(directKm),
     };
   });
 
-  // ETA calculation
+  // ETA from the crawler's live move order
   let etaDisplay = $derived(() => {
-    if (!crawlerState.currentRoute || !crawlerState.destination) return null;
-    const route = currentRouteOf(crawlerState, routeMap);
-    if (!route) return null;
-
-    const remainingProgress = 1 - crawlerState.routeProgress;
-    const remainingKm = route.distance * route.terrain * remainingProgress;
-    // Add remaining queued routes
-    let totalKm = remainingKm;
-    for (const [routeId] of crawlerState.routeQueue) {
-      const r = routeMap[routeId];
-      if (r) totalKm += r.distance * r.terrain;
-    }
-
-    const seconds = totalKm / CRAWLER_SPEED_KM_S;
+    if (!crawler || crawler.order.kind !== "move") return null;
+    const groundKm = remainingKm(crawler.lat, crawler.lng, crawler.order);
+    const speed =
+      CRAWLER_SPEED_KM_S * (crawler.order.mode === "road" ? ROAD_SPEED_MULT : 1);
+    const seconds = groundKm / speed;
     if (seconds < 60) return `${Math.ceil(seconds)}s`;
     if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
     return `${(seconds / 3600).toFixed(1)}h`;
@@ -134,6 +118,7 @@
   function handleTravel() {
     if (node) travelTo(node.id);
   }
+
 </script>
 
 {#if node}
@@ -198,14 +183,18 @@
       <button class="action cancel" onclick={cancelTravel}>CANCEL</button>
     {/if}
 
-    {#if canTravel() && !isTraveling}
+    {#if !isDockedHere && !isTraveling}
       {@const options = travelOptions()}
       <div class="travel-options">
-        <button class="action travel" onclick={handleTravel}>
-          TRAVEL{options?.roadsKm ? ` · ${options.roadsKm} KM` : ""}
+        <button
+          class="action travel"
+          disabled={!dock || options?.roadsKm === null}
+          onclick={handleTravel}
+        >
+          ROADS{options?.roadsKm ? ` · ${options.roadsKm} KM` : ""}
         </button>
         <button class="action overland" onclick={() => node && travelOverland(node.id)}>
-          OVERLAND{options ? ` · ${options.overlandKm} KM` : ""}
+          DIRECT{options ? ` · ${options.directKm} KM` : ""}
         </button>
       </div>
       <div class="travel-note">EFFECTIVE DISTANCE — ROADS ARE FAST BUT WATCHED</div>

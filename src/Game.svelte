@@ -72,7 +72,14 @@
         }
 
         applySessionState(session);
-        if (events.length > 0) pushEvents(events);
+        if (events.length > 0) {
+          // Combat legibility: first shots drop the clock to real time
+          // (the floor — you can't slow below 1x, per the design).
+          if (timeScale.get() > 1 && events.some((e) => e.kind === "combat-contact")) {
+            timeScale.set(1);
+          }
+          pushEvents(events.filter((e) => e.kind !== "combat-contact"));
+        }
 
         // Autosave at tick-batch boundaries only — never mid-batch.
         if (session.endState) {

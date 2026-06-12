@@ -83,6 +83,9 @@ export const COMBAT_CONTRACT_CHANCE = 0.3
 
 // ── Route risk ──────────────────────────────────────────────────────
 
+/** Ambush risk while moving off the road network — raiders camp roads */
+export const OFFROAD_DANGER = 0.12
+
 /** Per-tick ambush probability per unit of route danger while in transit */
 export const AMBUSH_RATE_PER_TICK = 8e-6
 

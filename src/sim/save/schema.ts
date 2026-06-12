@@ -1,38 +1,20 @@
 /**
- * Save schema v1 — Zod validation for the full session state.
+ * Save schema — Zod validation for the full session state.
  *
  * Saves are only written at tick-batch boundaries, so a validated save
  * is always a coherent simulation state. Loading re-derives game time
  * from the tick counter (gameTime = tick × TICK_DURATION_MS).
  */
 import { z } from 'zod'
-import {
-  Commodity,
-  NodeMarketSchema,
-  QuantumSchema,
-  RouteSchema,
-} from '../economy/models'
+import { Commodity, NodeMarketSchema, QuantumSchema } from '../economy/models'
 import { BoardSchema, ContractSchema } from '../contracts/models'
-import { EngagementSchema, UnitSchema } from '../combat/models'
+import { UnitSchema } from '../combat/models'
 import { PilotSchema } from '../pilots/models'
 import { FactionId } from '../factions/models'
 import { NodeIntelSchema } from '../intel/models'
 import type { SessionState } from '../session/state'
 
-export const SAVE_VERSION = 5 as const
-
-const CrawlerStateSchema = z.object({
-  lat: z.number(),
-  lng: z.number(),
-  currentNode: z.string().nullable(),
-  currentRoute: z.string().nullable(),
-  routeProgress: z.number(),
-  destination: z.string().nullable(),
-  routeReversed: z.boolean(),
-  routeQueue: z.array(z.tuple([z.string(), z.boolean()])),
-  // default(null) keeps pre-overland v5 saves loadable
-  overlandRoute: RouteSchema.nullable().default(null),
-})
+export const SAVE_VERSION = 6 as const
 
 const CompanyStateSchema = z.object({
   credits: z.number(),
@@ -56,20 +38,20 @@ const SessionStatsSchema = z.object({
 })
 
 const EndStateSchema = z.object({
-  kind: z.enum(['victory', 'stranded', 'bankrupt']),
+  kind: z.enum(['victory', 'stranded', 'bankrupt', 'destroyed']),
   tick: z.number(),
 })
 
 export const SessionStateSchema = z.object({
   tick: z.number(),
   rngState: z.number(),
-  crawler: CrawlerStateSchema,
   company: CompanyStateSchema,
   markets: z.record(z.string(), NodeMarketSchema),
   boards: z.record(z.string(), BoardSchema),
   active: z.array(ContractSchema),
-  forces: z.array(UnitSchema),
-  engagement: EngagementSchema.nullable(),
+  units: z.array(UnitSchema),
+  garage: z.array(UnitSchema),
+  crawlerDock: z.string().nullable(),
   quanta: z.array(QuantumSchema),
   pilots: z.array(PilotSchema),
   reputation: z.record(FactionId, z.number()),

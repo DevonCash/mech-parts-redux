@@ -4,37 +4,37 @@
     deliverContract,
     abandonContract,
   } from "../../stores/contracts";
-  import { deploy, engagement } from "../../stores/combat";
-  import { crawler } from "../../stores/crawler";
+  import { crawlerDock, units } from "../../stores/units";
   import { nodes } from "../../stores/world";
   import { tick } from "../../stores/time";
   import { company } from "../../stores/company";
   import type { Contract } from "../../sim/contracts/models";
+  import type { Unit } from "../../sim/combat/models";
+  import { unitDestroyed } from "../../sim/combat/damage";
   import { formatCredits, formatTickDuration } from "../format";
 
   let active = $state<readonly Contract[]>(activeContracts.get());
-  let crawlerState = $state(crawler.get());
+  let dock = $state(crawlerDock.get());
+  let allUnits = $state<readonly Unit[]>(units.get());
   let nodeMap = $state(nodes.get());
   let currentTick = $state(tick.get());
   let companyState = $state(company.get());
-  let eng = $state(engagement.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
     const unsubs = [
       activeContracts.subscribe((v) => (active = v)),
-      crawler.subscribe((v) => (crawlerState = v)),
+      crawlerDock.subscribe((v) => (dock = v)),
+      units.subscribe((v) => (allUnits = v)),
       nodes.subscribe((v) => (nodeMap = v)),
       tick.subscribe((v) => (currentTick = v)),
       company.subscribe((v) => (companyState = v)),
-      engagement.subscribe((v) => (eng = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
 
-  function handleDeploy(id: string) {
-    const result = deploy(id);
-    lastError = result.ok ? null : result.reason;
+  function hostilesUp(contractId: string): number {
+    return allUnits.filter((u) => u.contractId === contractId && !unitDestroyed(u)).length;
   }
 
   function nodeName(id: string): string {
@@ -65,16 +65,16 @@
     <div class="header">ACTIVE CONTRACTS</div>
     <ul>
       {#each active as contract (contract.id)}
-        {@const atSite = crawlerState.currentNode === contract.destination}
         {@const canDeliver =
           contract.type === "hauling" &&
-          atSite &&
+          dock === contract.destination &&
           (companyState.cargo[contract.commodity] ?? 0) >= contract.quantity}
-        {@const canDeploy = contract.type === "combat" && atSite && !eng}
         <li>
           <div class="row">
             {#if contract.type === "combat"}
-              <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
+              <span class="cargo combat">
+                CLEAR {hostilesUp(contract.id)}/{contract.hostiles} HOSTILES
+              </span>
               <span class="arrow">@</span>
             {:else}
               <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
@@ -95,10 +95,6 @@
             {/if}
             {#if canDeliver}
               <button class="deliver" onclick={() => deliver(contract.id)}>DELIVER</button>
-            {:else if canDeploy}
-              <button class="deliver" onclick={() => handleDeploy(contract.id)}>DEPLOY</button>
-            {:else if contract.type === "combat" && eng?.contractId === contract.id}
-              <span class="deadline red">ENGAGED</span>
             {:else}
               <button class="abandon" onclick={() => abandon(contract.id)}>ABANDON</button>
             {/if}

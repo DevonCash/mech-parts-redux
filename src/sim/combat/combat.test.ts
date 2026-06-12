@@ -1,19 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { makeRng } from '../rng'
-import { buildUnit, COMPONENTS, startingForces } from './catalog'
+import { buildUnit, COMPONENTS } from './catalog'
 import { applyHit, locationDestroyed, unitDestroyed } from './damage'
-import {
-  advanceEngagement,
-  createEngagement,
-  distanceKm,
-  rollSalvage,
-  survivingPlayerUnits,
-  unitSpeedKmS,
-} from './engagement'
 import { crudeRepairAll, precisionRepairAll, quoteRepairs } from './repair'
-import { startingPilots } from '../pilots/models'
 import type { CompanyState } from '../economy/market'
-import type { Engagement, Unit } from './models'
+import type { Unit } from './models'
 
 function scout(id = 'u1', side: Unit['side'] = 'player'): Unit {
   return buildUnit(id, id.toUpperCase(), 'scout', side, 0, 0)
@@ -131,142 +122,6 @@ describe('applyHit — damage propagation', () => {
       const result = applyHit(target, 10, makeRng(seed))
       expect(result.locationId).not.toBe('torso')
     }
-  })
-})
-
-describe('engagement', () => {
-  function smallEngagement(seed = 5): Engagement {
-    return createEngagement(
-      'c1',
-      'test-site',
-      [0, 0],
-      startingForces(),
-      startingPilots(),
-      2,
-      makeRng(seed),
-      0,
-    )
-  }
-
-  it('creation is deterministic per rng seed', () => {
-    expect(smallEngagement(9)).toEqual(smallEngagement(9))
-  })
-
-  it('spawns sides ~3 km apart', () => {
-    const eng = smallEngagement()
-    const player = eng.units.find((u) => u.side === 'player')!
-    const hostile = eng.units.find((u) => u.side === 'hostile')!
-    const d = distanceKm(player, hostile)
-    expect(d).toBeGreaterThan(2)
-    expect(d).toBeLessThan(4.5)
-  })
-
-  it('units close distance and a full run ends decisively', () => {
-    let eng = smallEngagement()
-    const rng = makeRng(123)
-    const before = distanceKm(
-      eng.units.find((u) => u.side === 'player')!,
-      eng.units.find((u) => u.side === 'hostile')!,
-    )
-
-    let ticks = 0
-    while (eng.status === 'active' && ticks < 60000) {
-      eng = advanceEngagement(eng, rng).engagement
-      ticks++
-      if (ticks === 300) {
-        const after = distanceKm(
-          eng.units.find((u) => u.side === 'player')!,
-          eng.units.find((u) => u.side === 'hostile')!,
-        )
-        expect(after).toBeLessThan(before)
-      }
-    }
-    expect(eng.status).not.toBe('active')
-    expect(ticks).toBeLessThan(60000)
-  }, 20000)
-
-  it('full engagement runs are deterministic', () => {
-    const run = () => {
-      let eng = smallEngagement(7)
-      const rng = makeRng(99)
-      for (let i = 0; i < 5000 && eng.status === 'active'; i++) {
-        eng = advanceEngagement(eng, rng).engagement
-      }
-      return eng
-    }
-    expect(run()).toEqual(run())
-  })
-
-  it('move orders are followed and clear on arrival', () => {
-    // One player unit, one hostile a full degree away (outside aggro
-    // range) so movement runs undisturbed by combat.
-    const mover = scout('mover')
-    const distant = buildUnit('far', 'FAR', 'scout', 'hostile', 1, 1)
-    const destLat = -0.05
-    let eng: Engagement = {
-      id: 'e1',
-      contractId: 'c1',
-      siteNodeId: 's1',
-      units: [
-        { ...mover, order: { kind: 'move', lat: destLat, lng: 0 } },
-        distant,
-      ],
-      pilots: {},
-      status: 'active',
-      startedTick: 0,
-    }
-    const rng = makeRng(1)
-    let arrived = false
-    for (let i = 0; i < 2000; i++) {
-      eng = advanceEngagement(eng, rng).engagement
-      const u = eng.units.find((x) => x.id === 'mover')!
-      if (u.order.kind === 'hold') {
-        arrived = true
-        break
-      }
-    }
-    const u = eng.units.find((x) => x.id === 'mover')!
-    expect(arrived).toBe(true)
-    expect(Math.abs(u.lat - destLat)).toBeLessThan(0.002)
-  })
-
-  it('salvage comes only from destroyed hostiles', () => {
-    let eng = smallEngagement()
-    expect(rollSalvage(eng, makeRng(1))).toEqual({ metal: 0, precision: 0 })
-
-    // Kill all hostiles outright.
-    eng = {
-      ...eng,
-      units: eng.units.map((u) =>
-        u.side === 'hostile'
-          ? {
-              ...u,
-              components: Object.fromEntries(
-                Object.entries(u.components).map(([loc, stack]) => [
-                  loc,
-                  stack.map((c) => ({ ...c, hp: 0 })),
-                ]),
-              ),
-            }
-          : u,
-      ),
-    }
-    const salvage = rollSalvage(eng, makeRng(1))
-    expect(salvage.metal).toBeGreaterThanOrEqual(8)
-    expect(survivingPlayerUnits(eng)).toHaveLength(2)
-  })
-
-  it('damaged locomotion slows the unit', () => {
-    const unit = scout()
-    const fullSpeed = unitSpeedKmS(unit)
-    const limping: Unit = {
-      ...unit,
-      components: {
-        ...unit.components,
-        legs: [{ templateId: 'actuator-biped', hp: 20, maxHP: 40 }],
-      },
-    }
-    expect(unitSpeedKmS(limping)).toBeCloseTo(fullSpeed / 2)
   })
 })
 

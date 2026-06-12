@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { makeRng } from '../rng'
-import { startingForces } from '../combat/catalog'
-import { advanceEngagement, createEngagement } from '../combat/engagement'
+import { startingGarage } from '../combat/catalog'
+import { unitDestroyed } from '../combat/damage'
+import { advanceUnits, spawnHostiles } from '../combat/strategic'
+import type { CombatContract } from '../contracts/models'
+import type { Unit } from '../combat/models'
 import {
   breakdown,
   effectiveFidelity,
@@ -14,6 +17,28 @@ import {
   startingPilots,
   type Pilot,
 } from './models'
+
+function combatContract(hostiles: number): CombatContract {
+  return {
+    id: 'c1',
+    type: 'combat',
+    origin: 'a',
+    destination: 'site',
+    hostiles,
+    pay: 5000,
+    faction: 'settler',
+    postedTick: 0,
+    deadlineTick: null,
+    boardExpiryTick: 999999,
+    status: 'active',
+  }
+}
+
+function battlefield(hostiles: number, seed: number, pilots: Pilot[]): Unit[] {
+  const garrison = spawnHostiles(combatContract(hostiles), [0, 0], makeRng(seed))
+  const lance = startingGarage().map((u, i) => ({ ...u, lat: -0.04, lng: i * 0.01 }))
+  return [...lance, ...garrison]
+}
 
 function pilot(overrides: Partial<Pilot> = {}): Pilot {
   return {
@@ -77,92 +102,74 @@ describe('pilot math', () => {
   })
 })
 
-describe('pilots in engagements', () => {
-  it('engagements carry pilot state for both sides', () => {
-    const eng = createEngagement(
-      'c1',
-      'site',
-      [0, 0],
-      startingForces(),
-      startingPilots(),
-      2,
-      makeRng(3),
-      0,
-    )
-    const playerUnits = eng.units.filter((u) => u.side === 'player')
-    const hostileUnits = eng.units.filter((u) => u.side === 'hostile')
-    for (const u of playerUnits) expect(eng.pilots[u.id]).toBeDefined()
-    for (const u of hostileUnits) expect(eng.pilots[u.id]).toBeDefined()
+describe('pilots in strategic combat', () => {
+  it('hostile units carry their own pilots; player units use the roster', () => {
+    const pilots = startingPilots()
+    const units = battlefield(2, 3, pilots)
+    for (const u of units) {
+      if (u.side === 'hostile') expect(u.npcPilot).toBeDefined()
+      else expect(u.pilotId).toBeDefined()
+    }
   })
 
-  it('combat accumulates stress on pilots taking fire', () => {
-    let eng = createEngagement(
-      'c1',
-      'site',
-      [0, 0],
-      startingForces(),
-      startingPilots(),
-      3,
-      makeRng(3),
-      0,
-    )
+  it('combat accumulates stress on the roster', () => {
+    const pilots = startingPilots()
+    let units = battlefield(3, 3, pilots)
+    let roster = pilots
     const rng = makeRng(42)
-    const before = Object.values(eng.pilots).reduce((s, p) => s + p.stress, 0)
-    for (let i = 0; i < 3000 && eng.status === 'active'; i++) {
-      eng = advanceEngagement(eng, rng).engagement
+    const before = roster.reduce((s, p) => s + p.stress, 0)
+    for (let i = 0; i < 3000; i++) {
+      const r = advanceUnits(units, roster, rng, true)
+      units = r.units
+      roster = r.pilots
+      if (!units.some((u) => u.side === 'hostile' && !unitDestroyed(u))) break
     }
-    const after = Object.values(eng.pilots).reduce((s, p) => s + p.stress, 0)
+    const after = roster.reduce((s, p) => s + p.stress, 0)
     expect(after).toBeGreaterThan(before)
   })
 
-  it('engagements with pilots remain deterministic', () => {
-    const run = () => {
-      let eng = createEngagement(
-        'c1',
-        'site',
-        [0, 0],
-        startingForces(),
-        startingPilots(),
-        2,
-        makeRng(7),
-        0,
-      )
+  it('strategic combat with pilots remains deterministic', () => {
+    const go = () => {
+      let units = battlefield(2, 7, startingPilots())
+      let roster = startingPilots()
       const rng = makeRng(99)
-      for (let i = 0; i < 4000 && eng.status === 'active'; i++) {
-        eng = advanceEngagement(eng, rng).engagement
+      for (let i = 0; i < 4000; i++) {
+        const r = advanceUnits(units, roster, rng, true)
+        units = r.units
+        roster = r.pilots
       }
-      return eng
+      return { units, roster }
     }
-    expect(run()).toEqual(run())
+    expect(go()).toEqual(go())
   })
 
-  it('better pilots win more: veteran lance beats raider-grade lance', () => {
-    // Same mechs both runs; only pilot quality differs.
-    const veterans = startingPilots().map((p) => ({ ...p, fidelity: 0.9, judgment: 0.9 }))
-    const rookies = startingPilots().map((p) => ({ ...p, fidelity: 0.15, judgment: 0.1 }))
+  it('better pilots win more: veteran lance beats rookie lance', () => {
+    const fight = (roster: Pilot[], seed: number) => {
+      let units = battlefield(3, seed, roster)
+      let pilots = roster
+      const rng = makeRng(seed + 500)
+      for (let i = 0; i < 60000; i++) {
+        const r = advanceUnits(units, pilots, rng, true)
+        units = r.units
+        pilots = r.pilots
+        const hostiles = units.some((u) => u.side === 'hostile' && !unitDestroyed(u))
+        const players = units.some((u) => u.side === 'player' && !unitDestroyed(u))
+        if (!hostiles) return true
+        if (!players) return false
+      }
+      return false
+    }
 
-    const winRate = (pilots: typeof veterans) => {
+    const winRate = (mod: (p: Pilot) => Pilot) => {
       let wins = 0
       for (let seed = 0; seed < 15; seed++) {
-        let eng = createEngagement(
-          'c1',
-          'site',
-          [0, 0],
-          startingForces(),
-          pilots,
-          3,
-          makeRng(seed),
-          0,
-        )
-        const rng = makeRng(seed + 500)
-        for (let i = 0; i < 60000 && eng.status === 'active'; i++) {
-          eng = advanceEngagement(eng, rng).engagement
-        }
-        if (eng.status === 'won') wins++
+        if (fight(startingPilots().map(mod), seed)) wins++
       }
       return wins
     }
 
-    expect(winRate(veterans)).toBeGreaterThan(winRate(rookies))
+    const veterans = winRate((p) => ({ ...p, fidelity: 0.9, judgment: 0.9 }))
+    const rookies = winRate((p) => ({ ...p, fidelity: 0.15, judgment: 0.1 }))
+    expect(veterans).toBeGreaterThan(rookies)
   }, 60000)
 })

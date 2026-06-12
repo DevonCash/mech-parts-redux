@@ -1,22 +1,31 @@
 <script lang="ts">
-  import { engagement, selectedUnit } from "../../stores/combat";
+  import { selectedUnit, units } from "../../stores/units";
+  import { pilots } from "../../stores/pilots";
   import { CHASSIS, COMPONENTS } from "../../sim/combat/catalog";
   import { unitDestroyed } from "../../sim/combat/damage";
+  import type { Unit } from "../../sim/combat/models";
+  import type { Pilot } from "../../sim/pilots/models";
 
-  let eng = $state(engagement.get());
+  let allUnits = $state<readonly Unit[]>(units.get());
+  let roster = $state<readonly Pilot[]>(pilots.get());
   let selected = $state(selectedUnit.get());
 
   $effect(() => {
     const unsubs = [
-      engagement.subscribe((v) => (eng = v)),
+      units.subscribe((v) => (allUnits = v)),
+      pilots.subscribe((v) => (roster = v)),
       selectedUnit.subscribe((v) => (selected = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
 
-  let unit = $derived(eng?.units.find((u) => u.id === selected) ?? null);
+  let unit = $derived(allUnits.find((u) => u.id === selected) ?? null);
   let chassis = $derived(unit ? CHASSIS[unit.chassisId] : null);
-  let pilot = $derived(unit && eng ? (eng.pilots[unit.id] ?? null) : null);
+  let pilot = $derived(
+    unit
+      ? (unit.pilotId ? (roster.find((p) => p.id === unit.pilotId) ?? null) : (unit.npcPilot ?? null))
+      : null,
+  );
 
   function hpClass(frac: number): string {
     if (frac <= 0) return "dead";
@@ -46,8 +55,8 @@
     <div class="order">
       ORDER:
       {#if unit.order.kind === "hold"}HOLD POSITION
-      {:else if unit.order.kind === "move"}MOVE
-      {:else}ATTACK {eng?.units.find((u) => u.id === (unit!.order as any).targetId)?.name ?? "?"}
+      {:else if unit.order.kind === "move"}MOVE{unit.order.mode === "road" ? " (ROADS)" : ""}
+      {:else}ATTACK {allUnits.find((u) => u.id === (unit!.order as any).targetId)?.name ?? "?"}
       {/if}
     </div>
 

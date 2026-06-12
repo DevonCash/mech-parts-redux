@@ -13,17 +13,15 @@ import type {
 import { createSession } from '../sim/session/new-game'
 import type { WorldStatic } from '../sim/contracts/generate'
 import { TICK_DURATION_MS } from '../sim/tick'
-import { crawler } from './crawler'
 import { company } from './company'
 import { markets } from './market'
 import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
 import { nodes, quanta, routes } from './world'
-import { forces } from './forces'
+import { crawlerDock, garage, units } from './units'
 import { pilots } from './pilots'
 import { reputation } from './reputation'
 import { intel } from './intel'
-import { engagement } from './combat'
 import { rngState, sessionStats } from './session-stats'
 
 export { rngState, sessionStats }
@@ -45,13 +43,13 @@ export function gatherSessionState(): SessionState {
   return {
     tick: tick.get(),
     rngState: rngState.get(),
-    crawler: crawler.get(),
     company: company.get(),
     markets: markets.get(),
     boards: boards.get(),
     active: activeContracts.get(),
-    forces: forces.get(),
-    engagement: engagement.get(),
+    units: units.get(),
+    garage: garage.get(),
+    crawlerDock: crawlerDock.get(),
     quanta: quanta.get(),
     pilots: pilots.get(),
     reputation: reputation.get(),
@@ -67,13 +65,13 @@ export function applySessionState(state: SessionState): void {
   tick.set(state.tick)
   gameTime.set(state.tick * TICK_DURATION_MS)
   rngState.set(state.rngState)
-  crawler.set(state.crawler)
   company.set(state.company)
   markets.set(state.markets)
   boards.set(state.boards)
   activeContracts.set(state.active)
-  forces.set(state.forces)
-  engagement.set(state.engagement)
+  units.set(state.units)
+  garage.set(state.garage)
+  crawlerDock.set(state.crawlerDock)
   quanta.set(state.quanta)
   pilots.set(state.pilots)
   reputation.set(state.reputation)

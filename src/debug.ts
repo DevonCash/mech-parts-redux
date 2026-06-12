@@ -4,28 +4,34 @@
  * without going through every UI affordance. Stripped from production
  * builds by the import.meta.env.DEV guard at the call site.
  */
-import { crawler } from './stores/crawler'
 import { company } from './stores/company'
 import { buyFuel, emergencyResupply, markets, tradeCommodity } from './stores/market'
 import { boards, activeContracts, acceptContract } from './stores/contracts'
-import { forces } from './stores/forces'
-import { engagement, selectedUnit, deploy, setUnitOrder } from './stores/combat'
+import {
+  crawlerDock,
+  deploy,
+  garage,
+  recall,
+  selectedUnit,
+  setUnitOrder,
+  units,
+} from './stores/units'
 import { endState, sessionParams, startNewSession } from './stores/session'
 import { tick, timeScale } from './stores/time'
-import { travelTo, travelOverland } from './stores/travel'
+import { travelTo, travelOverland, moveCrawlerTo, cancelTravel } from './stores/travel'
 import { nodes, quanta, routes } from './stores/world'
 import { quantumPosition } from './sim/economy/quanta'
 
 export function installDebugHandle(): void {
   ;(window as any).__mech = {
     stores: {
-      crawler,
       company,
       markets,
       boards,
       activeContracts,
-      forces,
-      engagement,
+      units,
+      garage,
+      crawlerDock,
       selectedUnit,
       endState,
       sessionParams,
@@ -42,8 +48,11 @@ export function installDebugHandle(): void {
       startNewSession,
       travelTo,
       travelOverland,
+      moveCrawlerTo,
+      cancelTravel,
       acceptContract,
       deploy,
+      recall,
       setUnitOrder,
       buyFuel,
       tradeCommodity,

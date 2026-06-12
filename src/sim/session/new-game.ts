@@ -12,7 +12,7 @@ import {
 import { seedMarkets } from '../economy/seed-market'
 import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
-import { startingForces } from '../combat/catalog'
+import { buildCrawlerUnit, startingGarage } from '../combat/catalog'
 import { startingPilots } from '../pilots/models'
 import { emptyReputation } from '../factions/models'
 import { makeRng } from '../rng'
@@ -30,17 +30,6 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
   const state: SessionState = {
     tick: 0,
     rngState: rng.state,
-    crawler: {
-      lat,
-      lng,
-      currentNode: startNode,
-      currentRoute: null,
-      routeProgress: 0,
-      destination: null,
-      routeReversed: false,
-      routeQueue: [],
-      overlandRoute: null,
-    },
     company: {
       credits: START_CREDITS,
       fuel: START_FUEL,
@@ -51,8 +40,9 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     markets,
     boards: {},
     active: [],
-    forces: startingForces(),
-    engagement: null,
+    units: [buildCrawlerUnit(lat, lng)],
+    garage: startingGarage(),
+    crawlerDock: startNode,
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
     pilots: startingPilots(),
     reputation: emptyReputation(),

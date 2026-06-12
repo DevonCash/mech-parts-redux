@@ -7,12 +7,13 @@
 import { describe, expect, it } from 'vitest'
 import { seedNodes } from '../economy/seed-nodes'
 import { generateSeedRoutes } from '../economy/seed-routes'
-import { findPath } from '../h3/graph'
 import { quote, addCargo, cargoUsed, executeTrade } from '../economy/market'
 import { abandonContract, deliverContract } from '../contracts/update'
 import { routeMetrics, type WorldStatic } from '../contracts/generate'
+import { buildRoadMoveOrder } from '../combat/orders'
+import { CRAWLER_UNIT_ID } from '../combat/catalog'
 import { createSession } from './new-game'
-import { advanceTick } from './pipeline'
+import { advanceTick, findCrawler } from './pipeline'
 import type { SessionState } from './state'
 import { round2 } from '../economy/seed-market'
 import {
@@ -25,40 +26,42 @@ const world: WorldStatic = {
   routes: Object.fromEntries(generateSeedRoutes(seedNodes).map((r) => [r.id, r])),
 }
 
-const positions: Record<string, [number, number]> = Object.fromEntries(
-  seedNodes.map((n) => [n.id, n.position]),
-)
-
 /**
- * Depart toward `destination` one hop at a time: travel only the first
- * path segment so the bot docks (and refuels) at every intermediate
- * node — long hauls exceed the tank, exactly as a player handles it.
+ * Depart toward `destination` one hop at a time via road orders so the
+ * bot docks (and refuels) at every intermediate node.
  */
 function departOneHop(state: SessionState, destination: string): SessionState | null {
-  const from = state.crawler.currentNode
+  const from = state.crawlerDock
   if (!from || from === destination) return null
-  const segments = findPath(from, destination, world.routes, positions)
-  if (!segments || segments.length === 0) return null
-  const first = segments[0]
-  const route = world.routes[first.routeId]
-  const hopTarget = first.reversed ? route.from : route.to
+  const full = buildRoadMoveOrder(from, destination, world.nodes, world.routes)
+  if (!full) return null
+  // Re-build as a single hop: find the first adjacent node along the path.
+  const adjacent = Object.values(world.routes)
+    .filter((r) => r.from === from || r.to === from)
+    .map((r) => (r.from === from ? r.to : r.from))
+  // Pick the adjacent node whose road order is a prefix of the full path
+  // — cheap approximation: the route hop minimizing remaining metric.
+  let best: { node: string; total: number } | null = null
+  for (const next of adjacent) {
+    const hop = routeMetrics(world, from, next)
+    const rest = next === destination ? { effectiveKm: 0 } : routeMetrics(world, next, destination)
+    if (!hop || !rest) continue
+    const total = hop.effectiveKm + rest.effectiveKm
+    if (!best || total < best.total) best = { node: next, total }
+  }
+  if (!best) return null
+  const order = buildRoadMoveOrder(from, best.node, world.nodes, world.routes)
+  if (!order) return null
   return {
     ...state,
-    crawler: {
-      ...state.crawler,
-      currentNode: null,
-      currentRoute: first.routeId,
-      routeReversed: first.reversed,
-      routeProgress: 0,
-      destination: hopTarget,
-      routeQueue: [],
-    },
+    crawlerDock: null,
+    units: state.units.map((u) => (u.id === CRAWLER_UNIT_ID ? { ...u, order } : u)),
   }
 }
 
 /** Bot turn while docked: deliver, then refuel, then accept and depart. */
 function dockedTurn(state: SessionState): SessionState {
-  const nodeId = state.crawler.currentNode!
+  const nodeId = state.crawlerDock!
   const market = state.markets[nodeId]
   let company = state.company
   let active = state.active
@@ -163,12 +166,12 @@ function playSession(seed: number, maxTicks: number): SessionState {
   let guard = 0
 
   while (state.tick < maxTicks && !state.endState) {
-    if (state.crawler.currentNode !== null) {
+    if (state.crawlerDock !== null) {
       const before = state
       state = dockedTurn(state)
       // If the bot couldn't act (no contracts, no fuel), let time pass so
       // boards refresh — advance a chunk of ticks.
-      if (before === state || state.crawler.currentNode !== null) {
+      if (before === state || state.crawlerDock !== null) {
         for (let i = 0; i < 2000 && !state.endState; i++) {
           state = advanceTick(state, world).state
         }
@@ -177,12 +180,12 @@ function playSession(seed: number, maxTicks: number): SessionState {
       // In transit — advance in slabs
       for (let i = 0; i < 2000 && !state.endState; i++) {
         state = advanceTick(state, world).state
-        if (state.crawler.currentNode !== null) break
+        if (state.crawlerDock !== null) break
       }
       // Halted dry mid-route: do what the player does — pay for an
       // emergency resupply and keep rolling.
       if (
-        state.crawler.currentRoute !== null &&
+        findCrawler(state.units)?.order.kind === 'move' &&
         state.company.fuel <= 0 &&
         state.company.credits >= EMERGENCY_RESUPPLY_COST
       ) {
@@ -226,6 +229,6 @@ describe('full-loop playthrough (bot)', () => {
     }
     // Docked and idle: should still be alive (credits untouched) — the
     // loop pressures action through opportunity cost, not a doom timer.
-    expect(state.crawler.currentNode).not.toBeNull()
+    expect(state.crawlerDock).not.toBeNull()
   })
 })

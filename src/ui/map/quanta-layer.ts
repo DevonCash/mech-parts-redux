@@ -7,7 +7,7 @@
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { quanta, routes } from '../../stores/world'
-import { crawler } from '../../stores/crawler'
+import { crawlerUnit, units } from '../../stores/units'
 import { quantumPosition } from '../../sim/economy/quanta'
 import { marsDistance } from '../../sim/constants'
 import { SENSOR_RANGE_KM } from '../../sim/intel/models'
@@ -17,7 +17,9 @@ const LAYER_ID = 'quanta-dots'
 
 function quantaGeoJSON() {
   const routeMap = routes.get()
-  const { lat, lng } = crawler.get()
+  const crawler = crawlerUnit()
+  const lat = crawler?.lat ?? 0
+  const lng = crawler?.lng ?? 0
   const features: any[] = []
   for (const q of quanta.get()) {
     const pos = quantumPosition(q, routeMap)
@@ -63,7 +65,7 @@ export function addQuantaLayer(map: MaplibreMap): () => void {
     })
   }
   // Crawler position gates visibility, so its movement re-fogs too.
-  const unsubs = [quanta.subscribe(refresh), crawler.subscribe(refresh)]
+  const unsubs = [quanta.subscribe(refresh), units.subscribe(refresh)]
 
   return () => {
     unsubs.forEach((u) => u())

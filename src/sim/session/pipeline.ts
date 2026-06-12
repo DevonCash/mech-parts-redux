@@ -4,7 +4,8 @@
  * advanceTick is a pure function: SessionState in, new SessionState and
  * any events out. The game loop runs N ticks per frame through it and
  * writes the result back to the stores. Order matters and is fixed:
- * movement → fuel → ambush → contracts → market drift → end check.
+ * units (movement + combat) → fuel/ambush → contract resolution →
+ * deadlines → boards/economy → sensor sweep → end check.
  *
  * Runs up to a few thousand times per second at 100× speed — keep every
  * stage cheap and allocation-light on the no-op path.
@@ -17,18 +18,15 @@ import {
   ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
 } from '../balance'
-import { advanceCrawler, CRAWLER_SPEED_KM_S, currentRouteOf } from '../crawler/movement'
 import { TICK_DURATION_MS } from '../tick'
 import { econStep } from '../economy/production'
 import { moveQuanta, quantaDecisions } from '../economy/quanta'
 import type { Commodity } from '../economy/models'
 import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
-import {
-  advanceEngagement,
-  rollSalvage,
-  survivingPlayerUnits,
-} from '../combat/engagement'
+import { CRAWLER_UNIT_ID } from '../combat/catalog'
+import { unitDestroyed } from '../combat/damage'
+import { advanceUnits, rollSalvage, LEASH_KM } from '../combat/strategic'
 import {
   growSkills,
   recoverStress,
@@ -46,12 +44,18 @@ import { marsDistance } from '../constants'
 import { OBSERVE_INTERVAL, SENSOR_RANGE_KM } from '../intel/models'
 import { checkEndConditions } from './end-conditions'
 import type { EndState, GameEvent, SessionState } from './state'
+import type { Unit } from '../combat/models'
 
-/** Effective km the crawler covers in one tick at full speed. */
-const EFFECTIVE_KM_PER_TICK = CRAWLER_SPEED_KM_S * (TICK_DURATION_MS / 1000)
+const TICK_S = TICK_DURATION_MS / 1000
 
-/** Fuel burned per tick while in transit. */
-export const FUEL_BURN_PER_TICK = EFFECTIVE_KM_PER_TICK * FUEL_PER_EFFECTIVE_KM
+/** Fuel burned per tick while the crawler executes a move order.
+ *  Flat per tick: roads move twice the ground per tick at the same
+ *  burn, which is exactly the old effective-km accounting. */
+export const FUEL_BURN_PER_TICK = 0.5 * TICK_S * FUEL_PER_EFFECTIVE_KM
+
+/** A combat contract is "engaged" (deadline-exempt) when a player unit
+ *  is this close to its site. */
+const ENGAGED_KM = LEASH_KM + 2
 
 /** How often the (heavier) bankruptcy check runs while docked. */
 const END_CHECK_INTERVAL = 50
@@ -61,6 +65,10 @@ export interface TickResult {
   events: GameEvent[]
 }
 
+export function findCrawler(units: Unit[]): Unit | undefined {
+  return units.find((u) => u.id === CRAWLER_UNIT_ID)
+}
+
 export function advanceTick(state: SessionState, world: WorldStatic): TickResult {
   if (state.endState) return { state, events: [] }
 
@@ -68,149 +76,152 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   const tick = state.tick + 1
   const rng = makeRng(state.rngState)
 
-  let crawler = state.crawler
   let company = state.company
   let markets = state.markets
   let boards = state.boards
   let active = state.active
-  let forces = state.forces
-  let engagement = state.engagement
+  let units = state.units
+  let garage = state.garage
+  let crawlerDock = state.crawlerDock
   let quanta = state.quanta
   let pilots = state.pilots
   let reputation = state.reputation
   let intel = state.intel
   let stats = state.stats
 
-  // ── Movement + fuel ───────────────────────────────────────────────
-  const inTransit = crawler.currentRoute !== null
-  if (inTransit) {
-    if (company.fuel > 0) {
-      const wasEnRoute = crawler.currentNode === null
-      crawler = advanceCrawler(crawler, world.routes)
-      const fuel = Math.max(0, company.fuel - FUEL_BURN_PER_TICK)
-      company = { ...company, fuel }
+  // ── Units: movement + combat on the shared clock ──────────────────
+  const crawlerBefore = findCrawler(units)
+  const crawlerMoving = crawlerBefore?.order.kind === 'move'
+  const crawlerCanMove = company.fuel > 0
 
-      if (wasEnRoute && crawler.currentNode !== null) {
-        const node = world.nodes[crawler.currentNode]
+  const needsAdvance =
+    units.length > 1 || crawlerMoving || (crawlerBefore && unitDestroyed(crawlerBefore))
+  if (needsAdvance) {
+    const result = advanceUnits(units, pilots, rng, crawlerCanMove)
+    units = result.units
+    pilots = result.pilots
+
+    for (const e of result.events) {
+      if (e.kind === 'combat-contact') {
+        // One per tick is plenty for the UI throttle.
+        if (!events.some((x) => x.kind === 'combat-contact')) {
+          events.push({ tick, kind: 'combat-contact', message: e.message })
+        }
+        continue
+      }
+      events.push({ tick, kind: e.kind, message: e.message })
+
+      // A dead player mech takes its pilot with it (cockpit rule).
+      if (e.kind === 'unit-destroyed' && e.side === 'player' && e.unitId !== CRAWLER_UNIT_ID) {
+        const dead = units.find((u) => u.id === e.unitId)
+        const pilot = dead?.pilotId ? pilots.find((p) => p.id === dead.pilotId) : undefined
+        if (pilot) {
+          pilots = pilots.filter((p) => p.id !== pilot.id)
+          events.push({ tick, kind: 'pilot-kia', message: `${pilot.name} KIA` })
+        }
+        units = units.filter((u) => u.id !== e.unitId)
+      }
+    }
+
+    for (const dock of result.docked) {
+      if (dock.unitId === CRAWLER_UNIT_ID) {
+        crawlerDock = dock.nodeId
+        const node = world.nodes[dock.nodeId]
         events.push({
           tick,
           kind: 'arrival',
-          message: `DOCKED AT ${node?.name?.toUpperCase() ?? crawler.currentNode}`,
+          message: `DOCKED AT ${node?.name?.toUpperCase() ?? dock.nodeId}`,
         })
-      }
-      if (fuel <= 0 && crawler.currentRoute !== null) {
-        events.push({
-          tick,
-          kind: 'fuel-empty',
-          message: 'FUEL EXHAUSTED — CRAWLER HALTED',
-        })
-      }
-
-      // ── Ambush roll (only while actually moving) ──────────────────
-      const route = currentRouteOf(state.crawler, world.routes)
-      if (route && rng.next() < route.danger * AMBUSH_RATE_PER_TICK) {
-        const result = applyAmbush(company, rng)
-        company = result.company
-        stats = { ...stats, ambushes: stats.ambushes + 1 }
-        events.push({ tick, kind: 'ambush', message: result.message })
       }
     }
   }
 
-  // ── Engagement ────────────────────────────────────────────────────
-  if (engagement && engagement.status === 'active') {
-    const result = advanceEngagement(engagement, rng)
-    engagement = result.engagement
-    for (const e of result.events) {
-      events.push({ tick, kind: e.kind, message: e.message })
+  // ── Crawler fuel + road ambush dice ───────────────────────────────
+  if (crawlerMoving && crawlerCanMove) {
+    const fuel = Math.max(0, company.fuel - FUEL_BURN_PER_TICK)
+    company = { ...company, fuel }
+    if (fuel <= 0 && findCrawler(units)?.order.kind === 'move') {
+      events.push({ tick, kind: 'fuel-empty', message: 'FUEL EXHAUSTED — CRAWLER HALTED' })
     }
 
-    if (engagement.status !== 'active') {
-      // Surviving mechs return to the roster with their damage; their
-      // pilots come back with their stress (and lessons, if they won).
-      // Pilots of destroyed mechs died with the cockpit.
-      const survivors = survivingPlayerUnits(engagement)
-      const survivorPilotIds = new Set(
-        survivors.map((u) => u.pilotId).filter(Boolean),
-      )
-      const won = engagement.status === 'won'
-      const nextPilots: typeof pilots = []
-      for (const pilot of pilots) {
-        const wasDeployed = engagement.units.some(
-          (u) => u.side === 'player' && u.pilotId === pilot.id,
-        )
-        if (!wasDeployed) {
-          nextPilots.push(pilot)
-          continue
-        }
-        if (!survivorPilotIds.has(pilot.id)) {
-          events.push({
-            tick,
-            kind: 'pilot-kia',
-            message: `${pilot.name} KIA`,
-          })
-          continue
-        }
-        const unitId = engagement.units.find(
-          (u) => u.side === 'player' && u.pilotId === pilot.id,
-        )?.id
-        let updated = (unitId && engagement.pilots[unitId]) || pilot
-        if (won) updated = growSkills(updated)
-        nextPilots.push(updated)
-      }
-      pilots = nextPilots
-      forces = survivors
-      const contract = active.find((c) => c.id === engagement!.contractId)
-
-      if (engagement.status === 'won') {
-        const salvage = rollSalvage(engagement, rng)
-        let cargo = company.cargo
-        const space = company.cargoCapacity - cargoUsed(company)
-        const metal = Math.min(salvage.metal, space)
-        if (metal > 0) cargo = addCargo(cargo, 'metal', metal)
-        const precision = Math.min(salvage.precision, space - metal)
-        if (precision > 0) cargo = addCargo(cargo, 'precision', precision)
-
-        const pay = contract?.pay ?? 0
-        company = { ...company, credits: company.credits + pay, cargo }
-        if (contract) {
-          active = active.filter((c) => c.id !== contract.id)
-          reputation = adjustReputation(reputation, contract.faction, REP_COMPLETED)
-          stats = {
-            ...stats,
-            contractsCompleted: stats.contractsCompleted + 1,
-            creditsEarned: stats.creditsEarned + pay,
-          }
-          events.push({
-            tick,
-            kind: 'contract-completed',
-            message: `CONTRACT COMPLETE — ¤${pay} + SALVAGE (${metal} METAL${precision ? `, ${precision} PRECISION` : ''})`,
-          })
-        }
-      } else if (contract) {
-        active = active.filter((c) => c.id !== contract.id)
-        reputation = adjustReputation(reputation, contract.faction, REP_FAILED)
-        stats = { ...stats, contractsFailed: stats.contractsFailed + 1 }
-      }
-      engagement = null
+    // Abstract route risk until raider quanta become live units.
+    const order = crawlerBefore!.order
+    if (order.kind === 'move' && rng.next() < order.danger * AMBUSH_RATE_PER_TICK) {
+      const result = applyAmbush(company, rng)
+      company = result.company
+      stats = { ...stats, ambushes: stats.ambushes + 1 }
+      events.push({ tick, kind: 'ambush', message: result.message })
     }
+  }
+
+  // ── Combat contract resolution: last hostile down → paid ──────────
+  for (const contract of active) {
+    if (contract.type !== 'combat') continue
+    const tagged = units.filter((u) => u.contractId === contract.id)
+    if (tagged.length === 0) continue // never spawned (shouldn't happen)
+    if (tagged.some((u) => !unitDestroyed(u))) continue
+
+    const salvage = rollSalvage(tagged, rng)
+    let cargo = company.cargo
+    const space = company.cargoCapacity - cargoUsed(company)
+    const metal = Math.min(salvage.metal, space)
+    if (metal > 0) cargo = addCargo(cargo, 'metal', metal)
+    const precision = Math.min(salvage.precision, space - metal)
+    if (precision > 0) cargo = addCargo(cargo, 'precision', precision)
+
+    company = { ...company, credits: company.credits + contract.pay, cargo }
+    units = units.filter((u) => u.contractId !== contract.id)
+    active = active.filter((c) => c.id !== contract.id)
+    reputation = adjustReputation(reputation, contract.faction, REP_COMPLETED)
+    stats = {
+      ...stats,
+      contractsCompleted: stats.contractsCompleted + 1,
+      creditsEarned: stats.creditsEarned + contract.pay,
+    }
+    events.push({
+      tick,
+      kind: 'contract-completed',
+      message: `CONTRACT COMPLETE — ¤${contract.pay} + SALVAGE (${metal} METAL${precision ? `, ${precision} PRECISION` : ''})`,
+    })
+    // Surviving the fight teaches everyone still in the field.
+    const deployedPilotIds = new Set(
+      units.filter((u) => u.pilotId && !unitDestroyed(u)).map((u) => u.pilotId),
+    )
+    pilots = pilots.map((p) => (deployedPilotIds.has(p.id) ? growSkills(p) : p))
   }
 
   // ── Contracts: hard deadlines ─────────────────────────────────────
-  // The contract being fought right now is exempt — its engagement's
-  // outcome decides it, not the clock.
+  // Combat contracts with player units at the site are exempt — the
+  // fight in progress decides them, not the clock.
   if (active.length > 0) {
-    const engagedId =
-      engagement && engagement.status === 'active' ? engagement.contractId : null
-    const result = updateActiveContracts(active, tick, engagedId)
-    if (result.failed.length > 0) {
-      active = result.active
-      stats = {
-        ...stats,
-        contractsFailed: stats.contractsFailed + result.failed.length,
-      }
-      for (const c of result.failed) {
+    const playerUnits = units.filter((u) => u.side === 'player' && !unitDestroyed(u))
+    const engagedIds = active
+      .filter((c) => {
+        if (c.type !== 'combat') return false
+        const site = world.nodes[c.destination]
+        if (!site) return false
+        return playerUnits.some(
+          (u) => marsDistance(u.lat, u.lng, site.position[0], site.position[1]) <= ENGAGED_KM,
+        )
+      })
+      .map((c) => c.id)
+
+    let failed: typeof active = []
+    for (const c of active) {
+      if (engagedIds.includes(c.id)) continue
+      const result = updateActiveContracts([c], tick)
+      if (result.failed.length > 0) failed = [...failed, ...result.failed]
+    }
+    if (failed.length > 0) {
+      const failedIds = new Set(failed.map((c) => c.id))
+      active = active.filter((c) => !failedIds.has(c.id))
+      stats = { ...stats, contractsFailed: stats.contractsFailed + failed.length }
+      for (const c of failed) {
         reputation = adjustReputation(reputation, c.faction, REP_FAILED)
+        // The garrison stands down (future: persist as world raiders).
+        if (c.type === 'combat') {
+          units = units.filter((u) => u.contractId !== c.id)
+        }
         const what =
           c.type === 'combat'
             ? `CLEAR ${c.hostiles} HOSTILES AT ${c.destination.toUpperCase()}`
@@ -224,20 +235,14 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
   }
 
-  // ── Boards: refresh where docked, prune everywhere on a slow cadence
-  if (crawler.currentNode !== null && boardStale(boards[crawler.currentNode], tick)) {
+  // ── Boards: refresh where docked ──────────────────────────────────
+  if (crawlerDock !== null && boardStale(boards[crawlerDock], tick)) {
     boards = {
       ...boards,
-      [crawler.currentNode]: generateBoard(
-        crawler.currentNode,
-        world,
-        rng,
-        tick,
-        markets,
-        reputation,
-      ),
+      [crawlerDock]: generateBoard(crawlerDock, world, rng, tick, markets, reputation),
     }
   }
+
   // ── Quanta in transit (every tick — it's one progress add each) ──
   quanta = moveQuanta(quanta, world.routes)
 
@@ -255,41 +260,46 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     markets = result.markets
 
     // Pilots wind down between fights — faster docked at a barracks.
-    if (!engagement && pilots.some((p) => p.stress > 0)) {
-      const rate =
-        crawler.currentNode !== null ? STRESS_RECOVERY_DOCKED : STRESS_RECOVERY_FIELD
+    // (Combat stress inflow dwarfs this rate, so no in-combat guard.)
+    if (pilots.some((p) => p.stress > 0)) {
+      const rate = crawlerDock !== null ? STRESS_RECOVERY_DOCKED : STRESS_RECOVERY_FIELD
       pilots = pilots.map((p) => recoverStress(p, rate))
     }
   }
 
   // ── Sensor sweep: snapshot every node within range ────────────────
-  // The sim above is ground truth; this is everything the UI is
-  // allowed to show about node state.
   if (tick % OBSERVE_INTERVAL === 0) {
-    let next: typeof intel | null = null
-    for (const node of Object.values(world.nodes)) {
-      const inRange =
-        crawler.currentNode === node.id ||
-        marsDistance(crawler.lat, crawler.lng, node.position[0], node.position[1]) <=
-          SENSOR_RANGE_KM
-      if (!inRange) continue
-      const market = markets[node.id]
-      if (!market) continue
-      if (!next) next = { ...intel }
-      next[node.id] = { observedTick: tick, market }
+    const crawlerNow = findCrawler(units)
+    if (crawlerNow) {
+      let next: typeof intel | null = null
+      for (const node of Object.values(world.nodes)) {
+        const inRange =
+          crawlerDock === node.id ||
+          marsDistance(crawlerNow.lat, crawlerNow.lng, node.position[0], node.position[1]) <=
+            SENSOR_RANGE_KM
+        if (!inRange) continue
+        const market = markets[node.id]
+        if (!market) continue
+        if (!next) next = { ...intel }
+        next[node.id] = { observedTick: tick, market }
+      }
+      if (next) intel = next
     }
-    if (next) intel = next
   }
 
   // ── End conditions ────────────────────────────────────────────────
   let endState: EndState | null = state.endState
+  const crawlerNow = findCrawler(units)
+  const crawlerDestroyed = !crawlerNow || unitDestroyed(crawlerNow)
   const cheapCheck =
+    crawlerDestroyed ||
     company.credits >= state.params.creditTarget ||
-    (crawler.currentRoute !== null && company.fuel <= 0)
-  if (cheapCheck || (crawler.currentNode !== null && tick % END_CHECK_INTERVAL === 0)) {
+    (crawlerNow?.order.kind === 'move' && company.fuel <= 0)
+  if (cheapCheck || (crawlerDock !== null && tick % END_CHECK_INTERVAL === 0)) {
     endState = checkEndConditions({
       tick,
-      crawler,
+      crawler: crawlerNow,
+      crawlerDock,
       company,
       markets,
       routes: world.routes,
@@ -303,9 +313,11 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         message:
           endState.kind === 'victory'
             ? 'DEBT CLEARED — CONTRACT FULFILLED'
-            : endState.kind === 'stranded'
-              ? 'CRAWLER STRANDED — NO FUEL, NO FUNDS'
-              : 'COMPANY BANKRUPT — ASSETS SEIZED',
+            : endState.kind === 'destroyed'
+              ? 'SERVER CORE DESTROYED — SIGNAL LOST'
+              : endState.kind === 'stranded'
+                ? 'CRAWLER STRANDED — NO FUEL, NO FUNDS'
+                : 'COMPANY BANKRUPT — ASSETS SEIZED',
       })
     }
   }
@@ -315,13 +327,13 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       ...state,
       tick,
       rngState: rng.state,
-      crawler,
       company,
       markets,
       boards,
       active,
-      forces,
-      engagement,
+      units,
+      garage,
+      crawlerDock,
       quanta,
       pilots,
       reputation,

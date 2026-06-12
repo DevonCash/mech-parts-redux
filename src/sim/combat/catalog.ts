@@ -71,6 +71,31 @@ export const COMPONENTS: Record<string, ComponentTemplate> = {
     maxHP: 15,
     hardness: 0,
   },
+  // ── Crawler components — same model, bigger scale ─────────────────
+  'hull-plate': {
+    id: 'hull-plate',
+    name: 'Hull Plating',
+    type: 'armor',
+    maxHP: 350,
+    hardness: 10,
+  },
+  'crawler-tracks': {
+    id: 'crawler-tracks',
+    name: 'Drive Tracks',
+    type: 'locomotion',
+    maxHP: 120,
+    hardness: 4,
+    topSpeedKmS: 0.5,
+  },
+  // The player IS this component. Destruction = game over
+  // (docs/characters/player.md).
+  'server-core': {
+    id: 'server-core',
+    name: 'Server Core',
+    type: 'cockpit',
+    maxHP: 60,
+    hardness: 4,
+  },
 }
 
 export const CHASSIS: Record<string, Chassis> = {
@@ -120,6 +145,15 @@ export const CHASSIS: Record<string, Chassis> = {
       { id: 'legs', label: 'LEGS', hitWeight: 3, parent: 'torso' },
     ],
   },
+  crawler: {
+    id: 'crawler',
+    name: 'Mobile Operations Crawler',
+    locations: [
+      { id: 'hull', label: 'HULL', hitWeight: 7 },
+      { id: 'tracks', label: 'TRACKS', hitWeight: 3, parent: 'hull' },
+      { id: 'core', label: 'CORE', hitWeight: 1, parent: 'hull' },
+    ],
+  },
 }
 
 /** Loadouts per chassis: location → template ids, outermost first. */
@@ -149,6 +183,11 @@ const LOADOUTS: Record<string, Record<string, string[]>> = {
     torso: ['plate-light', 'gyro'],
     left_arm: ['cannon'],
     legs: ['actuator-biped'],
+  },
+  crawler: {
+    hull: ['hull-plate', 'autocannon'], // one defensive gun behind the plate
+    tracks: ['crawler-tracks'],
+    core: ['server-core'],
   },
 }
 
@@ -183,8 +222,15 @@ export function buildUnit(
   }
 }
 
+export const CRAWLER_UNIT_ID = 'crawler'
+
+/** The crawler as a strategic unit — same model as everything else. */
+export function buildCrawlerUnit(lat: number, lng: number): Unit {
+  return buildUnit(CRAWLER_UNIT_ID, 'CRAWLER', 'crawler', 'player', lat, lng)
+}
+
 /** The company's starting lance, paired with the starting pilots. */
-export function startingForces(): Unit[] {
+export function startingGarage(): Unit[] {
   return [
     { ...buildUnit('mech-1', 'DUSTRUNNER', 'scout', 'player', 0, 0), pilotId: 'pilot-1' },
     { ...buildUnit('mech-2', 'HAMMERFALL', 'trooper', 'player', 0, 0), pilotId: 'pilot-2' },
