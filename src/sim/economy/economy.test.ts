@@ -71,6 +71,27 @@ describe('production', () => {
     for (let i = 0; i < 30; i++) market = produce(nodes['valles-hub'], market)
     expect(market.inventory.fuel).toBe(market.baseInventory.fuel)
   })
+
+  it('maintains the fuel reserve at recipe-less nodes (depots) too', () => {
+    const markets = freshMarkets()
+    const drained = {
+      ...markets['syrtis-depot'],
+      inventory: { ...markets['syrtis-depot'].inventory, fuel: 0 },
+    }
+    let market = drained
+    for (let i = 0; i < 30; i++) market = produce(nodes['syrtis-depot'], market)
+    expect(market.inventory.fuel).toBe(market.baseInventory.fuel)
+  })
+
+  it('legacy goods drain independently — one running out does not stall the other', () => {
+    const markets = freshMarkets()
+    const market = {
+      ...markets['valles-hub'],
+      inventory: { ...markets['valles-hub'].inventory, medical: 0, electronics: 10 },
+    }
+    const after = produce(nodes['valles-hub'], market)
+    expect(after.inventory.electronics).toBeLessThan(10)
+  })
 })
 
 describe('pricing', () => {

@@ -59,13 +59,14 @@
   {:else}
     <ul class="list">
       {#each contracts as contract (contract.id)}
-        <li class="contract">
+        {@const expired = contract.deadlineTick !== null && contract.deadlineTick <= currentTick}
+        <li class="contract" class:expired>
           <div class="row main">
             {#if contract.type === "combat"}
               <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
               <span class="arrow">@</span>
             {:else}
-              <span class="cargo">{contract.quantity} {contract.commodity?.toUpperCase()}</span>
+              <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
               <span class="arrow">→</span>
             {/if}
             <span class="dest">{nodeName(contract.destination)}</span>
@@ -75,12 +76,14 @@
               {FACTIONS[contract.faction].name.split(" ")[0]}
             </span>
             <span class="pay">¤ {formatCredits(contract.pay)}</span>
-            {#if contract.deadlineTick !== null}
+            {#if expired}
+              <span class="deadline red">EXPIRED</span>
+            {:else if contract.deadlineTick !== null}
               <span class="deadline">DUE {formatTickDuration(contract.deadlineTick - currentTick)}</span>
             {:else}
               <span class="deadline soft">NO DEADLINE</span>
             {/if}
-            <button class="accept" onclick={() => accept(contract.id)}>ACCEPT</button>
+            <button class="accept" disabled={expired} onclick={() => accept(contract.id)}>ACCEPT</button>
           </div>
         </li>
       {/each}
@@ -227,6 +230,19 @@
 
   .deadline.soft {
     color: rgba(255, 255, 255, 0.35);
+  }
+
+  .deadline.red {
+    color: #ff5050;
+  }
+
+  .contract.expired {
+    opacity: 0.45;
+  }
+
+  .accept:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 
   .accept {

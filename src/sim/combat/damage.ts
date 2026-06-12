@@ -32,18 +32,6 @@ export function unitDestroyed(unit: Unit): boolean {
   return cockpits > 0 && cockpits === dead
 }
 
-/** Performance fraction of the first living component of a type. */
-export function componentFraction(unit: Unit, type: string): number {
-  for (const stack of Object.values(unit.components)) {
-    for (const c of stack) {
-      if (COMPONENTS[c.templateId].type === type && c.maxHP > 0) {
-        return Math.max(0, c.hp) / c.maxHP
-      }
-    }
-  }
-  return 0
-}
-
 export interface HitResult {
   unit: Unit
   locationId: string

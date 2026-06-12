@@ -9,6 +9,7 @@
  */
 import { SELL_MARGIN } from '../balance'
 import { TICK_DURATION_MS } from '../tick'
+import { interpolateRoutePath } from '../crawler/movement'
 import type { Rng } from '../rng'
 import {
   COMMODITIES,
@@ -220,15 +221,7 @@ export function quantumPosition(
 ): [number, number] | null {
   if (!q.route) return null
   const route = routes[q.route]
-  if (!route) return null
+  if (!route || route.path.length === 0) return null
   const path = q.reversed ? [...route.path].reverse() : route.path
-  if (path.length === 0) return null
-  const totalSegments = path.length - 1
-  if (totalSegments <= 0) return path[0]
-  const exact = Math.min(0.999, q.progress) * totalSegments
-  const i = Math.floor(exact)
-  const frac = exact - i
-  const from = path[i]
-  const to = path[i + 1]
-  return [from[0] + (to[0] - from[0]) * frac, from[1] + (to[1] - from[1]) * frac]
+  return interpolateRoutePath(path, q.progress)
 }

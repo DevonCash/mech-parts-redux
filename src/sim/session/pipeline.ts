@@ -194,8 +194,12 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   }
 
   // ── Contracts: hard deadlines ─────────────────────────────────────
+  // The contract being fought right now is exempt — its engagement's
+  // outcome decides it, not the clock.
   if (active.length > 0) {
-    const result = updateActiveContracts(active, tick)
+    const engagedId =
+      engagement && engagement.status === 'active' ? engagement.contractId : null
+    const result = updateActiveContracts(active, tick, engagedId)
     if (result.failed.length > 0) {
       active = result.active
       stats = {
@@ -207,7 +211,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         const what =
           c.type === 'combat'
             ? `CLEAR ${c.hostiles} HOSTILES AT ${c.destination.toUpperCase()}`
-            : `${c.quantity} ${c.commodity?.toUpperCase()} TO ${c.destination.toUpperCase()}`
+            : `${c.quantity} ${c.commodity.toUpperCase()} TO ${c.destination.toUpperCase()}`
         events.push({
           tick,
           kind: 'contract-failed',

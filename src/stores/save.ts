@@ -17,17 +17,25 @@ export function saveGame(): void {
   }
 }
 
+/**
+ * A save exists AND validates — otherwise the title screen would
+ * offer a CONTINUE button that silently does nothing (e.g. after a
+ * schema version bump).
+ */
 export function hasSave(): boolean {
-  return localStorage.getItem(SAVE_KEY) !== null
+  const raw = localStorage.getItem(SAVE_KEY)
+  return raw !== null && decodeSave(raw) !== null
 }
 
-/** Load the save slot into the stores. Returns false if absent/corrupt. */
+/** Load the save slot into the stores. Returns false if absent/corrupt
+ *  (and clears a corrupt slot so it stops being offered). */
 export function loadGame(): boolean {
   const raw = localStorage.getItem(SAVE_KEY)
   if (!raw) return false
   const state = decodeSave(raw)
   if (!state) {
-    console.warn('Save corrupt or incompatible — ignoring')
+    console.warn('Save corrupt or incompatible — clearing')
+    clearSave()
     return false
   }
   applySessionState(state)

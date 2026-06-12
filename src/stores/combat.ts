@@ -2,8 +2,7 @@
  * Engagement state + combat actions: deploy at a contract site and
  * issue move/attack orders to deployed units.
  */
-import { atom } from 'nanostores'
-import type { Engagement, UnitOrder } from '../sim/combat/models'
+import type { UnitOrder } from '../sim/combat/models'
 import { createEngagement } from '../sim/combat/engagement'
 import { unitDestroyed } from '../sim/combat/damage'
 import { makeRng } from '../sim/rng'
@@ -12,14 +11,12 @@ import { crawler } from './crawler'
 import { forces } from './forces'
 import { pilots } from './pilots'
 import { nodes } from './world'
+import { engagement, selectedUnit } from './combat-state'
 import { rngState } from './session-stats'
 import { timeScale, tick } from './time'
 import type { ActionResult } from './market'
 
-export const engagement = atom<Engagement | null>(null)
-
-/** Unit id selected on the map for order input */
-export const selectedUnit = atom<string | null>(null)
+export { engagement, selectedUnit }
 
 /**
  * Deploy the lance against an active combat contract at the docked
@@ -51,7 +48,7 @@ export function deploy(contractId: string): ActionResult {
       node.position,
       lance,
       pilots.get(),
-      contract.hostiles ?? 2,
+      contract.hostiles,
       rng,
       tick.get(),
     ),

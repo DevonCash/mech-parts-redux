@@ -50,7 +50,6 @@
 
   onMount(() => {
     let lastTime = performance.now();
-    const world = getWorld();
 
     function frame(now: number) {
       const realDelta = now - lastTime;
@@ -59,6 +58,9 @@
       const result = stepper.step(realDelta, timeScale.get());
 
       if (result.ticks > 0 && !endState.get()) {
+        // Read the world per batch, not once at mount — construction
+        // and route decay will make nodes/routes dynamic.
+        const world = getWorld();
         let session = gatherSessionState();
         const events: GameEvent[] = [];
 

@@ -7,6 +7,7 @@ import { startingForces } from '../sim/combat/catalog'
 import { crudeRepairAll, precisionRepairAll } from '../sim/combat/repair'
 import { company } from './company'
 import { crawler } from './crawler'
+import { engagement } from './combat-state'
 import type { ActionResult } from './market'
 
 export const forces = atom<Unit[]>(startingForces())
@@ -17,6 +18,12 @@ function repairWith(
 ): ActionResult {
   if (!crawler.get().currentNode) {
     return { ok: false, reason: 'WORKSHOP NEEDS DOCK' }
+  }
+  // Deployed units are copies inside the engagement; repairing the
+  // roster mid-fight would burn materials on state that gets
+  // overwritten by the post-battle write-back.
+  if (engagement.get()?.status === 'active') {
+    return { ok: false, reason: 'LANCE DEPLOYED' }
   }
   const unit = forces.get().find((u) => u.id === unitId)
   if (!unit) return { ok: false, reason: 'UNIT NOT FOUND' }

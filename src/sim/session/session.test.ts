@@ -218,6 +218,45 @@ describe('save round-trip', () => {
 })
 
 describe('engagement through the pipeline', () => {
+  it('an engaged contract does not fail its deadline mid-fight', () => {
+    let s = createSession(3, world)
+    const contract = {
+      id: 'combat-late',
+      type: 'combat' as const,
+      origin: START_NODE,
+      destination: START_NODE,
+      hostiles: 2,
+      pay: 5000,
+      faction: 'settler' as const,
+      postedTick: 0,
+      deadlineTick: s.tick + 1, // passes immediately
+      boardExpiryTick: 999999,
+      status: 'active' as const,
+    }
+    const rng = makeRng(s.rngState)
+    const node = world.nodes[START_NODE]
+    s = {
+      ...s,
+      active: [contract],
+      engagement: createEngagement(
+        contract.id,
+        START_NODE,
+        node.position,
+        s.forces,
+        s.pilots,
+        contract.hostiles,
+        rng,
+        s.tick,
+      ),
+      rngState: rng.state,
+    }
+    // Run well past the deadline but not long enough to resolve the fight.
+    for (let i = 0; i < 10; i++) s = advanceTick(s, world).state
+    expect(s.engagement?.status).toBe('active')
+    expect(s.active.map((c) => c.id)).toEqual(['combat-late'])
+    expect(s.stats.contractsFailed).toBe(0)
+  })
+
   it('a won engagement completes the contract: pay, salvage, mech damage persists', () => {
     let s = createSession(3, world)
     const contract = {

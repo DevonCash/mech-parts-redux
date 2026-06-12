@@ -18,6 +18,7 @@ import { company } from './company'
 import { crawler } from './crawler'
 import { reputation } from './reputation'
 import { sessionStats } from './session-stats'
+import { tick } from './time'
 import type { ActionResult } from './market'
 
 export const boards = atom<Record<string, Board>>({})
@@ -36,6 +37,9 @@ export function acceptContract(contractId: string): ActionResult {
   const contract = board?.contracts.find((c) => c.id === contractId)
   if (!contract) return { ok: false, reason: 'CONTRACT NOT FOUND' }
   if (contract.origin !== nodeId) return { ok: false, reason: 'WRONG ORIGIN' }
+  if (contract.deadlineTick !== null && tick.get() >= contract.deadlineTick) {
+    return { ok: false, reason: 'DEADLINE PASSED' }
+  }
 
   const active = activeContracts.get()
   if (active.length >= contractSlots(reputation.get())) {
@@ -43,7 +47,7 @@ export function acceptContract(contractId: string): ActionResult {
   }
 
   // Hauling cargo is loaded on accept; combat contracts carry nothing.
-  if (contract.type === 'hauling' && contract.commodity && contract.quantity) {
+  if (contract.type === 'hauling') {
     const c = company.get()
     if (cargoUsed(c) + contract.quantity > c.cargoCapacity) {
       return { ok: false, reason: 'CARGO FULL' }

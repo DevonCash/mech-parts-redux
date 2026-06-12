@@ -69,7 +69,7 @@
         {@const canDeliver =
           contract.type === "hauling" &&
           atSite &&
-          (companyState.cargo[contract.commodity ?? "metal"] ?? 0) >= (contract.quantity ?? 0)}
+          (companyState.cargo[contract.commodity] ?? 0) >= contract.quantity}
         {@const canDeploy = contract.type === "combat" && atSite && !eng}
         <li>
           <div class="row">
@@ -77,7 +77,7 @@
               <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
               <span class="arrow">@</span>
             {:else}
-              <span class="cargo">{contract.quantity} {contract.commodity?.toUpperCase()}</span>
+              <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
               <span class="arrow">→</span>
             {/if}
             <span class="dest">{nodeName(contract.destination)}</span>

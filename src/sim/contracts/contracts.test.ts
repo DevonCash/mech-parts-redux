@@ -9,7 +9,7 @@ import {
   pruneBoard,
   updateActiveContracts,
 } from './update'
-import type { Contract } from './models'
+import type { HaulingContract } from './models'
 import type { CompanyState } from '../economy/market'
 import { BOARD_REFRESH_TICKS, CONTRACT_BOARD_TTL } from '../balance'
 
@@ -29,7 +29,7 @@ function company(overrides: Partial<CompanyState> = {}): CompanyState {
   }
 }
 
-function haulContract(overrides: Partial<Contract> = {}): Contract {
+function haulContract(overrides: Partial<HaulingContract> = {}): HaulingContract {
   return {
     id: 'c1',
     type: 'hauling',
@@ -157,6 +157,14 @@ describe('updateActiveContracts', () => {
     const result = updateActiveContracts(active, 500)
     expect(result.active).toBe(active)
   })
+
+  it('exempts the contract currently being fought from deadline failure', () => {
+    const engaged = haulContract({ id: 'engaged', deadlineTick: 100 })
+    const other = haulContract({ id: 'other', deadlineTick: 100 })
+    const result = updateActiveContracts([engaged, other], 200, 'engaged')
+    expect(result.active.map((c) => c.id)).toEqual(['engaged'])
+    expect(result.failed.map((c) => c.id)).toEqual(['other'])
+  })
 })
 
 describe('pruneBoard', () => {
@@ -164,12 +172,24 @@ describe('pruneBoard', () => {
     const board = {
       generatedTick: 0,
       contracts: [
-        haulContract({ status: 'available', boardExpiryTick: 100 }),
-        haulContract({ id: 'c2', status: 'available', boardExpiryTick: CONTRACT_BOARD_TTL }),
+        haulContract({ status: 'available', boardExpiryTick: 100, deadlineTick: null }),
+        haulContract({ id: 'c2', status: 'available', boardExpiryTick: CONTRACT_BOARD_TTL, deadlineTick: null }),
       ],
     }
     const pruned = pruneBoard(board, 200)
     expect(pruned.contracts.map((c) => c.id)).toEqual(['c2'])
+  })
+
+  it('drops posted contracts whose hard deadline already passed', () => {
+    const board = {
+      generatedTick: 0,
+      contracts: [
+        haulContract({ id: 'expired', status: 'available', deadlineTick: 100 }),
+        haulContract({ id: 'live', status: 'available', deadlineTick: 10000 }),
+      ],
+    }
+    const pruned = pruneBoard(board, 200)
+    expect(pruned.contracts.map((c) => c.id)).toEqual(['live'])
   })
 })
 

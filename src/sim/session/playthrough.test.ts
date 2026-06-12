@@ -70,7 +70,7 @@ function dockedTurn(state: SessionState): SessionState {
   // local market, and failing that, cut losses and abandon.
   for (const contract of [...active]) {
     if (contract.destination !== nodeId) continue
-    if (contract.type !== 'hauling' || !contract.commodity || !contract.quantity) continue
+    if (contract.type !== 'hauling') continue
     let result = deliverContract(company, contract)
     if (!result.ok) {
       const shortfall = contract.quantity - (company.cargo[contract.commodity] ?? 0)
@@ -131,13 +131,13 @@ function dockedTurn(state: SessionState): SessionState {
       .filter((x): x is NonNullable<typeof x> => x !== null)
       .filter(
         ({ contract, fuelCost }) =>
-          cargoUsed(company) + (contract.quantity ?? 0) <= company.cargoCapacity &&
+          cargoUsed(company) + contract.quantity <= company.cargoCapacity &&
           company.credits + company.fuel >= fuelCost + 300 &&
           fuelCost > 0,
       )
       .sort((a, b) => b.net - a.net)
     const pick = candidates[0]?.contract
-    if (pick && pick.commodity && pick.quantity) {
+    if (pick) {
       company = { ...company, cargo: addCargo(company.cargo, pick.commodity, pick.quantity) }
       active = [...active, { ...pick, status: 'active' as const }]
       boards = {

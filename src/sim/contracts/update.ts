@@ -4,7 +4,6 @@
  * Pure functions: deadline failures and board expiry run every tick;
  * delivery runs when the player docks and chooses to hand over cargo.
  */
-import type { Commodity } from '../economy/models'
 import { addCargo, type CompanyState } from '../economy/market'
 import type { Board, Contract } from './models'
 
@@ -14,13 +13,21 @@ export interface ContractTickResult {
   failed: Contract[]
 }
 
-/** Fail active contracts whose hard deadline has passed. */
+/**
+ * Fail active contracts whose hard deadline has passed. A contract the
+ * player is currently fighting (`excludeId`) is left alone — the
+ * engagement's own outcome decides it, not the clock.
+ */
 export function updateActiveContracts(
   active: Contract[],
   currentTick: number,
+  excludeId: string | null = null,
 ): ContractTickResult {
   const failed = active.filter(
-    (c) => c.deadlineTick !== null && currentTick > c.deadlineTick,
+    (c) =>
+      c.id !== excludeId &&
+      c.deadlineTick !== null &&
+      currentTick > c.deadlineTick,
   )
   if (failed.length === 0) return { active, failed }
   return {
@@ -29,9 +36,17 @@ export function updateActiveContracts(
   }
 }
 
-/** Drop unaccepted contracts that have sat on a board too long. */
+/**
+ * Drop unaccepted contracts that have sat on a board too long, or
+ * whose hard deadline has already passed (they can no longer be
+ * completed, so offering them would be a trap).
+ */
 export function pruneBoard(board: Board, currentTick: number): Board {
-  const kept = board.contracts.filter((c) => currentTick <= c.boardExpiryTick)
+  const kept = board.contracts.filter(
+    (c) =>
+      currentTick <= c.boardExpiryTick &&
+      (c.deadlineTick === null || currentTick <= c.deadlineTick),
+  )
   if (kept.length === board.contracts.length) return board
   return { ...board, contracts: kept }
 }
@@ -48,10 +63,10 @@ export function deliverContract(
   company: CompanyState,
   contract: Contract,
 ): DeliveryResult {
-  if (contract.type !== 'hauling' || !contract.commodity || !contract.quantity) {
+  if (contract.type !== 'hauling') {
     return { ok: false, reason: 'NOT A DELIVERY CONTRACT' }
   }
-  const held = company.cargo[contract.commodity as Commodity] ?? 0
+  const held = company.cargo[contract.commodity] ?? 0
   if (held < contract.quantity) {
     return {
       ok: false,
@@ -78,10 +93,10 @@ export function abandonContract(
   company: CompanyState,
   contract: Contract,
 ): { company: CompanyState; contract: Contract } {
-  if (contract.type !== 'hauling' || !contract.commodity || !contract.quantity) {
+  if (contract.type !== 'hauling') {
     return { company, contract: { ...contract, status: 'failed' } }
   }
-  const held = company.cargo[contract.commodity as Commodity] ?? 0
+  const held = company.cargo[contract.commodity] ?? 0
   const confiscated = Math.min(held, contract.quantity)
   return {
     company: {

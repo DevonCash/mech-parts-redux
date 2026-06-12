@@ -53,10 +53,7 @@ export function checkEndConditions(input: EndCheckInput): EndState | null {
     const deliverableHere = active.some(
       (c) =>
         c.destination === crawler.currentNode &&
-        (c.type === 'combat' ||
-          (c.commodity !== undefined &&
-            c.quantity !== undefined &&
-            (company.cargo[c.commodity] ?? 0) >= c.quantity)),
+        (c.type === 'combat' || (company.cargo[c.commodity] ?? 0) >= c.quantity),
     )
     if (deliverableHere) return null
 

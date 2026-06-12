@@ -1,5 +1,6 @@
 /**
- * Contract data models.
+ * Contract data models — a discriminated union so every consumer
+ * narrows on `type` and the compiler enforces field access.
  *
  * Hauling: move commodity cargo origin → destination.
  * Combat: clear hostiles at the destination node (deploy mechs there).
@@ -7,9 +8,6 @@
 import { z } from 'zod'
 import { Commodity } from '../economy/models'
 import { FactionId } from '../factions/models'
-
-export const ContractType = z.enum(['hauling', 'combat'])
-export type ContractType = z.infer<typeof ContractType>
 
 export const ContractStatus = z.enum([
   'available',
@@ -20,18 +18,12 @@ export const ContractStatus = z.enum([
 ])
 export type ContractStatus = z.infer<typeof ContractStatus>
 
-export const ContractSchema = z.object({
+const ContractBase = z.object({
   id: z.string(),
-  type: ContractType,
   /** Node where the contract is posted — boards only post local work */
   origin: z.string(),
   /** Hauling: where the cargo is due. Combat: the site to clear. */
   destination: z.string(),
-  /** Hauling only */
-  commodity: Commodity.optional(),
-  quantity: z.number().optional(),
-  /** Combat only — number of hostile units at the site */
-  hostiles: z.number().optional(),
   /** Issuing faction — the dominant faction at the origin node */
   faction: FactionId,
   pay: z.number(),
@@ -42,7 +34,27 @@ export const ContractSchema = z.object({
   boardExpiryTick: z.number(),
   status: ContractStatus,
 })
+
+export const HaulingContractSchema = ContractBase.extend({
+  type: z.literal('hauling'),
+  commodity: Commodity,
+  quantity: z.number(),
+})
+export type HaulingContract = z.infer<typeof HaulingContractSchema>
+
+export const CombatContractSchema = ContractBase.extend({
+  type: z.literal('combat'),
+  /** Number of hostile units at the site */
+  hostiles: z.number(),
+})
+export type CombatContract = z.infer<typeof CombatContractSchema>
+
+export const ContractSchema = z.discriminatedUnion('type', [
+  HaulingContractSchema,
+  CombatContractSchema,
+])
 export type Contract = z.infer<typeof ContractSchema>
+export type ContractType = Contract['type']
 
 /** A node's contract board with its regeneration bookkeeping. */
 export const BoardSchema = z.object({
@@ -50,3 +62,4 @@ export const BoardSchema = z.object({
   contracts: z.array(ContractSchema),
 })
 export type Board = z.infer<typeof BoardSchema>
+

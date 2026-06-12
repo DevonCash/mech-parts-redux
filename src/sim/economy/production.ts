@@ -38,9 +38,12 @@ function recipesFor(node: GameNode): Recipe[] {
       ]
     case 'settlement':
       return [
-        // Hydroponics feed the region; the population burns legacy goods.
+        // Hydroponics feed the region; the population burns legacy
+        // goods. Separate recipes so each drains independently — one
+        // running out must not stall consumption of the other.
         { inputs: [['water', 2]], outputs: [['food', 6]] },
-        { inputs: [['medical', 0.5], ['electronics', 0.25]], outputs: [] },
+        { inputs: [['medical', 0.5]], outputs: [] },
+        { inputs: [['electronics', 0.25]], outputs: [] },
       ]
     case 'depot':
       return [] // depots store, they don't make
@@ -62,7 +65,6 @@ function inventoryCap(market: NodeMarket, c: Commodity): number {
  */
 export function produce(node: GameNode, market: NodeMarket): NodeMarket {
   const recipes = recipesFor(node)
-  if (recipes.length === 0) return market
 
   const inventory = { ...market.inventory }
   for (const recipe of recipes) {
