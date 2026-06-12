@@ -17,7 +17,7 @@ import {
   ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
 } from '../balance'
-import { advanceCrawler, CRAWLER_SPEED_KM_S } from '../crawler/movement'
+import { advanceCrawler, CRAWLER_SPEED_KM_S, currentRouteOf } from '../crawler/movement'
 import { TICK_DURATION_MS } from '../tick'
 import { econStep } from '../economy/production'
 import { moveQuanta, quantaDecisions } from '../economy/quanta'
@@ -42,6 +42,8 @@ import {
 } from '../factions/models'
 import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
+import { marsDistance } from '../constants'
+import { OBSERVE_INTERVAL, SENSOR_RANGE_KM } from '../intel/models'
 import { checkEndConditions } from './end-conditions'
 import type { EndState, GameEvent, SessionState } from './state'
 
@@ -76,6 +78,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let quanta = state.quanta
   let pilots = state.pilots
   let reputation = state.reputation
+  let intel = state.intel
   let stats = state.stats
 
   // ── Movement + fuel ───────────────────────────────────────────────
@@ -104,7 +107,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       }
 
       // ── Ambush roll (only while actually moving) ──────────────────
-      const route = world.routes[state.crawler.currentRoute!]
+      const route = currentRouteOf(state.crawler, world.routes)
       if (route && rng.next() < route.danger * AMBUSH_RATE_PER_TICK) {
         const result = applyAmbush(company, rng)
         company = result.company
@@ -259,6 +262,25 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
   }
 
+  // ── Sensor sweep: snapshot every node within range ────────────────
+  // The sim above is ground truth; this is everything the UI is
+  // allowed to show about node state.
+  if (tick % OBSERVE_INTERVAL === 0) {
+    let next: typeof intel | null = null
+    for (const node of Object.values(world.nodes)) {
+      const inRange =
+        crawler.currentNode === node.id ||
+        marsDistance(crawler.lat, crawler.lng, node.position[0], node.position[1]) <=
+          SENSOR_RANGE_KM
+      if (!inRange) continue
+      const market = markets[node.id]
+      if (!market) continue
+      if (!next) next = { ...intel }
+      next[node.id] = { observedTick: tick, market }
+    }
+    if (next) intel = next
+  }
+
   // ── End conditions ────────────────────────────────────────────────
   let endState: EndState | null = state.endState
   const cheapCheck =
@@ -303,6 +325,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       quanta,
       pilots,
       reputation,
+      intel,
       stats,
       endState,
     },

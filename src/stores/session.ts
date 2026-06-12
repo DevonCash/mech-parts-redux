@@ -22,6 +22,7 @@ import { nodes, quanta, routes } from './world'
 import { forces } from './forces'
 import { pilots } from './pilots'
 import { reputation } from './reputation'
+import { intel } from './intel'
 import { engagement } from './combat'
 import { rngState, sessionStats } from './session-stats'
 
@@ -54,6 +55,7 @@ export function gatherSessionState(): SessionState {
     quanta: quanta.get(),
     pilots: pilots.get(),
     reputation: reputation.get(),
+    intel: intel.get(),
     params: sessionParams.get(),
     stats: sessionStats.get(),
     endState: endState.get(),
@@ -75,6 +77,7 @@ export function applySessionState(state: SessionState): void {
   quanta.set(state.quanta)
   pilots.set(state.pilots)
   reputation.set(state.reputation)
+  intel.set(state.intel)
   sessionParams.set(state.params)
   sessionStats.set(state.stats)
   endState.set(state.endState)

@@ -1,4 +1,5 @@
 import { atom } from 'nanostores'
+import type { Route } from '../sim/economy/models'
 
 export interface CrawlerState {
   /** Current latitude on Mars */
@@ -17,6 +18,9 @@ export interface CrawlerState {
   routeReversed: boolean
   /** Queued route segments for multi-hop travel: [routeId, reversed] pairs */
   routeQueue: [string, boolean][]
+  /** Synthetic route for an off-road leg (currentRoute = OVERLAND_ROUTE_ID).
+   *  Lives on the crawler because it isn't part of the route network. */
+  overlandRoute: Route | null
 }
 
 const defaultCrawler: CrawlerState = {
@@ -28,6 +32,7 @@ const defaultCrawler: CrawlerState = {
   destination: null,
   routeReversed: false,
   routeQueue: [],
+  overlandRoute: null,
 }
 
 // Plain atom: writing localStorage every tick is a perf hazard, and

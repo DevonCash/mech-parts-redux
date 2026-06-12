@@ -22,6 +22,21 @@ function effectivePath(route: Route, reversed: boolean): [number, number][] {
 }
 
 /**
+ * Resolve the route the crawler is currently traversing — a network
+ * route by id, or the synthetic overland leg carried on the crawler.
+ */
+export function currentRouteOf(
+  state: CrawlerState,
+  routes: Record<string, Route>,
+): Route | null {
+  if (!state.currentRoute) return null
+  if (state.overlandRoute && state.currentRoute === state.overlandRoute.id) {
+    return state.overlandRoute
+  }
+  return routes[state.currentRoute] ?? null
+}
+
+/**
  * Interpolate a position along a route path at a given progress fraction (0–1).
  */
 export function interpolateRoutePath(
@@ -60,7 +75,7 @@ export function advanceCrawler(
 ): CrawlerState {
   if (!state.currentRoute) return state
 
-  const route = routes[state.currentRoute]
+  const route = currentRouteOf(state, routes)
   if (!route) return state
 
   const path = effectivePath(route, state.routeReversed)
@@ -92,6 +107,7 @@ export function advanceCrawler(
           routeProgress: 0,
           destination: state.destination,
           routeQueue: remainingQueue,
+          overlandRoute: null,
         }
       }
     }
@@ -106,6 +122,7 @@ export function advanceCrawler(
       routeProgress: 0,
       destination: null,
       routeQueue: [],
+      overlandRoute: null,
     }
   }
 

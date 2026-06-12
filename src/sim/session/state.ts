@@ -12,6 +12,7 @@ import type { Board, Contract } from '../contracts/models'
 import type { Engagement, Unit } from '../combat/models'
 import type { Pilot } from '../pilots/models'
 import type { Reputation } from '../factions/models'
+import type { IntelMap } from '../intel/models'
 
 export type EndKind = 'victory' | 'stranded' | 'bankrupt'
 
@@ -51,6 +52,8 @@ export interface SessionState {
   pilots: Pilot[]
   /** Standing with each faction, −1..1 */
   reputation: Reputation
+  /** What the player has observed of each node, by node id */
+  intel: IntelMap
   params: SessionParams
   stats: SessionStats
   endState: EndState | null

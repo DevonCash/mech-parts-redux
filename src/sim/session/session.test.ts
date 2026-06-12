@@ -318,6 +318,54 @@ describe('engagement through the pipeline', () => {
   }, 30000)
 })
 
+describe('intel — fog of war', () => {
+  it('starts knowing only the home port', () => {
+    const s = createSession(1, world)
+    expect(Object.keys(s.intel)).toEqual([START_NODE])
+    expect(s.intel[START_NODE].observedTick).toBe(0)
+  })
+
+  it('the docked node is re-observed on the sweep cadence', () => {
+    let s = createSession(1, world)
+    s = runTicks(s, 200)
+    expect(s.intel[START_NODE].observedTick).toBeGreaterThan(0)
+  })
+
+  it('intel for distant nodes stays stale until visited', () => {
+    let s = createSession(1, world)
+    // Far node on the other side of the planet from valles-hub
+    expect(s.intel['elysium-mine']).toBeUndefined()
+    s = runTicks(s, 500)
+    expect(s.intel['elysium-mine']).toBeUndefined()
+  })
+
+  it('arrival at a node yields fresh intel for it', () => {
+    const s = depart(createSession(1, world))
+    const destination = s.crawler.destination!
+    expect(s.intel[destination]).toBeUndefined()
+
+    const route = world.routes[s.crawler.currentRoute!]
+    const needed = travelTicks(route.distance * route.terrain) + 60
+    const after = runTicks(s, needed)
+    expect(after.crawler.currentNode).toBe(destination)
+    expect(after.intel[destination]).toBeDefined()
+    expect(after.intel[destination].observedTick).toBeGreaterThan(0)
+  })
+
+  it('an observed snapshot does not change while out of range', () => {
+    const s = depart(createSession(1, world))
+    const route = world.routes[s.crawler.currentRoute!]
+    const needed = travelTicks(route.distance * route.terrain) + 60
+    const arrived = runTicks(s, needed)
+
+    // Home port intel froze at (or before) departure-adjacent sweeps;
+    // running further while docked elsewhere must not refresh it.
+    const homeSnapshot = arrived.intel[START_NODE]
+    const later = runTicks(arrived, 500)
+    expect(later.intel[START_NODE]).toBe(homeSnapshot)
+  })
+})
+
 describe('route metrics sanity', () => {
   it('every seeded node can reach every other node', () => {
     const ids = Object.keys(world.nodes)

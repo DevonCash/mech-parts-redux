@@ -6,6 +6,8 @@
 import { crawler, type CrawlerState } from './crawler'
 import { routes, nodes } from './world'
 import { findPath } from '../sim/h3/graph'
+import { currentRouteOf } from '../sim/crawler/movement'
+import { buildOverlandRoute } from '../sim/crawler/overland'
 import type { Route } from '../sim/economy/models'
 
 /**
@@ -72,6 +74,7 @@ export function travelTo(targetNodeId: string): boolean {
       routeProgress: 0,
       destination: targetNodeId,
       routeQueue: [],
+      overlandRoute: null,
     })
     return true
   }
@@ -105,8 +108,39 @@ export function travelTo(targetNodeId: string): boolean {
     routeProgress: 0,
     destination: targetNodeId,
     routeQueue: rest.map(s => [s.routeId, s.reversed] as [string, boolean]),
+    overlandRoute: null,
   })
 
+  return true
+}
+
+/**
+ * Order the crawler straight across open terrain to a node — no roads.
+ * Twice the effective distance cost of a road km, but well clear of
+ * the ambush corridors raiders watch.
+ */
+export function travelOverland(targetNodeId: string): boolean {
+  const state = crawler.get()
+  if (!state.currentNode) return false
+  if (state.currentNode === targetNodeId) return false
+
+  const nodeMap = nodes.get()
+  const from = nodeMap[state.currentNode]
+  const to = nodeMap[targetNodeId]
+  if (!from || !to) return false
+
+  const leg = buildOverlandRoute(from, to)
+  crawler.set({
+    lat: leg.path[0][0],
+    lng: leg.path[0][1],
+    currentNode: null,
+    currentRoute: leg.id,
+    routeReversed: false,
+    routeProgress: 0,
+    destination: targetNodeId,
+    routeQueue: [],
+    overlandRoute: leg,
+  })
   return true
 }
 
@@ -118,7 +152,7 @@ export function cancelTravel(): void {
   if (!state.currentRoute) return
 
   const routeMap = routes.get()
-  const route = routeMap[state.currentRoute]
+  const route = currentRouteOf(state, routeMap)
   if (!route) return
 
   // Snap to whichever endpoint is closer based on progress
@@ -138,5 +172,6 @@ export function cancelTravel(): void {
     routeProgress: 0,
     destination: null,
     routeQueue: [],
+    overlandRoute: null,
   })
 }

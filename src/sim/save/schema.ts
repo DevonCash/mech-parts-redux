@@ -6,11 +6,17 @@
  * from the tick counter (gameTime = tick × TICK_DURATION_MS).
  */
 import { z } from 'zod'
-import { Commodity, NodeMarketSchema, QuantumSchema } from '../economy/models'
+import {
+  Commodity,
+  NodeMarketSchema,
+  QuantumSchema,
+  RouteSchema,
+} from '../economy/models'
 import { BoardSchema, ContractSchema } from '../contracts/models'
 import { EngagementSchema, UnitSchema } from '../combat/models'
 import { PilotSchema } from '../pilots/models'
 import { FactionId } from '../factions/models'
+import { NodeIntelSchema } from '../intel/models'
 import type { SessionState } from '../session/state'
 
 export const SAVE_VERSION = 5 as const
@@ -24,6 +30,8 @@ const CrawlerStateSchema = z.object({
   destination: z.string().nullable(),
   routeReversed: z.boolean(),
   routeQueue: z.array(z.tuple([z.string(), z.boolean()])),
+  // default(null) keeps pre-overland v5 saves loadable
+  overlandRoute: RouteSchema.nullable().default(null),
 })
 
 const CompanyStateSchema = z.object({
@@ -65,6 +73,8 @@ export const SessionStateSchema = z.object({
   quanta: z.array(QuantumSchema),
   pilots: z.array(PilotSchema),
   reputation: z.record(FactionId, z.number()),
+  // default({}) keeps pre-intel saves loadable
+  intel: z.record(z.string(), NodeIntelSchema).default({}),
   params: SessionParamsSchema,
   stats: SessionStatsSchema,
   endState: EndStateSchema.nullable(),

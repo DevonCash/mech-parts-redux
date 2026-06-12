@@ -9,6 +9,7 @@
   import { addCrawlerLayer } from "./crawler-layer";
   import { addUnitLayer } from "./unit-layer";
   import { addQuantaLayer } from "./quanta-layer";
+  import { addSensorLayer } from "./sensor-layer";
   import { checkMapData } from "./data-availability";
   import { buildGraticule } from "./graticule";
   import { engagement } from "../../stores/combat";
@@ -20,6 +21,7 @@
   let cleanupCrawler: (() => void) | undefined;
   let cleanupUnits: (() => void) | undefined;
   let cleanupQuanta: (() => void) | undefined;
+  let cleanupSensor: (() => void) | undefined;
   let cleanupEngagementCamera: (() => void) | undefined;
   let loading = $state(true);
   let degraded = $state(false);
@@ -424,6 +426,7 @@
         // Routes first (render below nodes), then convoys, node markers,
         // crawler, and engagement units on top
         cleanupRoutes = addRouteLayer(m);
+        cleanupSensor = addSensorLayer(m);
         cleanupQuanta = addQuantaLayer(m);
         cleanupNodes = addNodeLayer(m);
         cleanupCrawler = addCrawlerLayer(m);
@@ -460,6 +463,7 @@
       cleanupCrawler?.();
       cleanupNodes?.();
       cleanupQuanta?.();
+      cleanupSensor?.();
       cleanupRoutes?.();
       map?.remove();
       if (terrainProtocolId) maplibregl.removeProtocol(terrainProtocolId);

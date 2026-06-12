@@ -9,7 +9,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import { crawler } from '../../stores/crawler'
 import { routes } from '../../stores/world'
 import { alpha } from '../../stores/time'
-import { interpolateRoutePath, CRAWLER_SPEED_KM_S } from '../../sim/crawler/movement'
+import { interpolateRoutePath, CRAWLER_SPEED_KM_S, currentRouteOf } from '../../sim/crawler/movement'
 import { TICK_DURATION_MS } from '../../sim/tick'
 
 const SOURCE_ID = 'crawler'
@@ -42,7 +42,7 @@ function displayPosition(): [number, number] {
   if (!state.currentRoute) return [state.lat, state.lng]
 
   const routeMap = routes.get()
-  const route = routeMap[state.currentRoute]
+  const route = currentRouteOf(state, routeMap)
   if (!route) return [state.lat, state.lng]
 
   const progressPerTick = (CRAWLER_SPEED_KM_S * TICK_DURATION_S) / (route.distance * route.terrain)

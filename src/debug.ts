@@ -12,7 +12,7 @@ import { forces } from './stores/forces'
 import { engagement, selectedUnit, deploy, setUnitOrder } from './stores/combat'
 import { endState, sessionParams, startNewSession } from './stores/session'
 import { tick, timeScale } from './stores/time'
-import { travelTo } from './stores/travel'
+import { travelTo, travelOverland } from './stores/travel'
 import { nodes, quanta, routes } from './stores/world'
 import { quantumPosition } from './sim/economy/quanta'
 
@@ -41,6 +41,7 @@ export function installDebugHandle(): void {
     actions: {
       startNewSession,
       travelTo,
+      travelOverland,
       acceptContract,
       deploy,
       setUnitOrder,

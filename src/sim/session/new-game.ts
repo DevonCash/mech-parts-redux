@@ -39,6 +39,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
       destination: null,
       routeReversed: false,
       routeQueue: [],
+      overlandRoute: null,
     },
     company: {
       credits: START_CREDITS,
@@ -55,6 +56,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
     pilots: startingPilots(),
     reputation: emptyReputation(),
+    intel: {},
     params: {
       seed,
       startCredits: START_CREDITS,
@@ -64,8 +66,10 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     endState: null,
   }
 
-  // Starting node gets an immediate board so the first dock isn't empty.
+  // Starting node gets an immediate board so the first dock isn't
+  // empty, and the company knows the state of its home port.
   state.boards[startNode] = generateBoard(startNode, world, rng, 0, markets)
+  state.intel[startNode] = { observedTick: 0, market: markets[startNode] }
   state.rngState = rng.state
 
   return state

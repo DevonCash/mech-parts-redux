@@ -1,21 +1,28 @@
 /**
  * NPC convoy rendering — hauler quanta in transit show as small dim
- * dots crawling the route network. Pure presentation; updates are
- * throttled to animation frames via the quanta store subscription.
+ * dots crawling the route network. Fogged: only contacts within the
+ * crawler's sensor range render — the economy runs everywhere, but you
+ * only see the slice your sensors reach. Updates are throttled to
+ * animation frames via the quanta store subscription.
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { quanta, routes } from '../../stores/world'
+import { crawler } from '../../stores/crawler'
 import { quantumPosition } from '../../sim/economy/quanta'
+import { marsDistance } from '../../sim/constants'
+import { SENSOR_RANGE_KM } from '../../sim/intel/models'
 
 const SOURCE_ID = 'quanta'
 const LAYER_ID = 'quanta-dots'
 
 function quantaGeoJSON() {
   const routeMap = routes.get()
+  const { lat, lng } = crawler.get()
   const features: any[] = []
   for (const q of quanta.get()) {
     const pos = quantumPosition(q, routeMap)
     if (!pos) continue
+    if (marsDistance(lat, lng, pos[0], pos[1]) > SENSOR_RANGE_KM) continue
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [pos[1], pos[0]] },
@@ -55,10 +62,11 @@ export function addQuantaLayer(map: MaplibreMap): () => void {
       if (source && 'setData' in source) (source as any).setData(quantaGeoJSON())
     })
   }
-  const unsubscribe = quanta.subscribe(refresh)
+  // Crawler position gates visibility, so its movement re-fogs too.
+  const unsubs = [quanta.subscribe(refresh), crawler.subscribe(refresh)]
 
   return () => {
-    unsubscribe()
+    unsubs.forEach((u) => u())
     if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID)
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
   }

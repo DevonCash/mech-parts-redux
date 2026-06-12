@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { advanceCrawler, interpolateRoutePath, CRAWLER_SPEED_KM_S } from './movement'
+import {
+  advanceCrawler,
+  currentRouteOf,
+  interpolateRoutePath,
+  CRAWLER_SPEED_KM_S,
+} from './movement'
+import {
+  buildOverlandRoute,
+  OFFROAD_DANGER,
+  OFFROAD_TERRAIN,
+  OVERLAND_ROUTE_ID,
+} from './overland'
 import { TICK_DURATION_MS } from '../tick'
+import { createNode } from '../economy/models'
 import type { CrawlerState } from '../../stores/crawler'
 import type { Route } from '../economy/models'
 
@@ -29,6 +41,7 @@ function makeCrawlerOnRoute(overrides: Partial<CrawlerState> = {}): CrawlerState
     destination: 'b',
     routeReversed: false,
     routeQueue: [],
+    overlandRoute: null,
     ...overrides,
   }
 }
@@ -75,6 +88,7 @@ describe('advanceCrawler', () => {
       destination: null,
       routeReversed: false,
     routeQueue: [],
+    overlandRoute: null,
     }
     const result = advanceCrawler(state, {})
     expect(result).toEqual(state)
@@ -167,5 +181,63 @@ describe('advanceCrawler', () => {
     expect(state.currentRoute).toBeNull()
     expect(state.destination).toBeNull()
     expect(state.routeQueue).toEqual([])
+  })
+})
+
+describe('overland travel', () => {
+  const from = createNode({
+    id: 'a',
+    name: 'A',
+    position: [0, 0],
+    type: 'settlement',
+  })
+  const to = createNode({
+    id: 'b',
+    name: 'B',
+    position: [0, 10],
+    type: 'depot',
+  })
+
+  it('builds a synthetic leg with off-road terrain and low danger', () => {
+    const leg = buildOverlandRoute(from, to)
+    expect(leg.id).toBe(OVERLAND_ROUTE_ID)
+    expect(leg.terrain).toBe(OFFROAD_TERRAIN)
+    expect(leg.danger).toBe(OFFROAD_DANGER)
+    expect(leg.distance).toBeGreaterThan(0)
+    expect(leg.path[0]).toEqual([0, 0])
+    expect(leg.path[leg.path.length - 1]).toEqual([0, 10])
+  })
+
+  it('currentRouteOf resolves the overland leg without a network entry', () => {
+    const leg = buildOverlandRoute(from, to)
+    const state = makeCrawlerOnRoute({
+      currentRoute: leg.id,
+      overlandRoute: leg,
+    })
+    expect(currentRouteOf(state, {})).toBe(leg)
+  })
+
+  it('advanceCrawler traverses an overland leg and clears it on arrival', () => {
+    const leg = buildOverlandRoute(from, to)
+    let state = makeCrawlerOnRoute({
+      currentRoute: leg.id,
+      overlandRoute: leg,
+      destination: 'b',
+    })
+
+    const ticksNeeded = Math.ceil(
+      (leg.distance * leg.terrain) / (CRAWLER_SPEED_KM_S * (TICK_DURATION_MS / 1000)),
+    )
+    for (let i = 0; i <= ticksNeeded && state.currentRoute; i++) {
+      state = advanceCrawler(state, {})
+    }
+    expect(state.currentNode).toBe('b')
+    expect(state.currentRoute).toBeNull()
+    expect(state.overlandRoute).toBeNull()
+  })
+
+  it('an overland leg costs 2x a road over the same ground', () => {
+    const leg = buildOverlandRoute(from, to)
+    expect(leg.distance * leg.terrain).toBeCloseTo(leg.distance * 0.5 * 2, 5)
   })
 })
