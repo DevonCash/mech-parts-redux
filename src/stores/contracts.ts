@@ -2,15 +2,21 @@
  * Contract boards, active contracts, and player contract actions.
  */
 import { atom } from 'nanostores'
-import { ACTIVE_CONTRACT_SLOTS } from '../sim/balance'
 import { cargoUsed, addCargo } from '../sim/economy/market'
 import type { Board, Contract } from '../sim/contracts/models'
 import {
   abandonContract as simAbandon,
   deliverContract as simDeliver,
 } from '../sim/contracts/update'
+import {
+  adjustReputation,
+  contractSlots,
+  REP_ABANDONED,
+  REP_COMPLETED,
+} from '../sim/factions/models'
 import { company } from './company'
 import { crawler } from './crawler'
+import { reputation } from './reputation'
 import { sessionStats } from './session-stats'
 import type { ActionResult } from './market'
 
@@ -32,7 +38,7 @@ export function acceptContract(contractId: string): ActionResult {
   if (contract.origin !== nodeId) return { ok: false, reason: 'WRONG ORIGIN' }
 
   const active = activeContracts.get()
-  if (active.length >= ACTIVE_CONTRACT_SLOTS) {
+  if (active.length >= contractSlots(reputation.get())) {
     return { ok: false, reason: 'CONTRACT SLOTS FULL' }
   }
 
@@ -66,6 +72,7 @@ export function deliverContract(contractId: string): ActionResult {
 
   company.set(result.company)
   activeContracts.set(activeContracts.get().filter((c) => c.id !== contractId))
+  reputation.set(adjustReputation(reputation.get(), contract.faction, REP_COMPLETED))
   const stats = sessionStats.get()
   sessionStats.set({
     ...stats,
@@ -83,6 +90,7 @@ export function abandonContract(contractId: string): ActionResult {
   const result = simAbandon(company.get(), contract)
   company.set(result.company)
   activeContracts.set(activeContracts.get().filter((c) => c.id !== contractId))
+  reputation.set(adjustReputation(reputation.get(), contract.faction, REP_ABANDONED))
   const stats = sessionStats.get()
   sessionStats.set({ ...stats, contractsFailed: stats.contractsFailed + 1 })
   return { ok: true }

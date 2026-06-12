@@ -28,6 +28,11 @@ import {
 } from '../economy/models'
 import { priceFactor } from '../economy/seed-market'
 import { shortage } from '../economy/production'
+import {
+  nodeFaction,
+  payModifier,
+  type Reputation,
+} from '../factions/models'
 import { findPath } from '../h3/graph'
 import { TICK_DURATION_MS } from '../tick'
 import type { Rng } from '../rng'
@@ -81,10 +86,14 @@ export function generateBoard(
   rng: Rng,
   currentTick: number,
   markets?: Record<string, NodeMarket>,
+  reputation?: Reputation,
 ): Board {
   const origin = world.nodes[nodeId]
   const contracts: Contract[] = []
   if (!origin) return { generatedTick: currentTick, contracts }
+
+  const faction = nodeFaction(origin)
+  const repPay = reputation ? payModifier(reputation, faction) : 1
 
   const otherNodes = Object.values(world.nodes)
     .filter((n) => n.id !== nodeId)
@@ -102,13 +111,14 @@ export function generateBoard(
       const hostiles = rng.int(2, 4)
       const eta = travelTicks(metrics.effectiveKm)
       let pay = COMBAT_PAY_BASE + hostiles * COMBAT_PAY_PER_HOSTILE
-      pay = Math.round(pay * rng.range(0.9, 1.15))
+      pay = Math.round(pay * repPay * rng.range(0.9, 1.15))
       contracts.push({
         id: `${nodeId}-${currentTick}-${i}`,
         type: 'combat',
         origin: nodeId,
         destination: destination.id,
         hostiles,
+        faction,
         pay,
         postedTick: currentTick,
         deadlineTick:
@@ -145,7 +155,7 @@ export function generateBoard(
       quantity * COMMODITY_VALUES[commodity] * 0.15
     pay *= 1 + urgency * 0.5
     if (hardDeadline) pay *= HARD_DEADLINE_BONUS
-    pay = Math.round(pay * rng.range(0.9, 1.15))
+    pay = Math.round(pay * repPay * rng.range(0.9, 1.15))
 
     contracts.push({
       id: `${nodeId}-${currentTick}-${i}`,
@@ -154,6 +164,7 @@ export function generateBoard(
       destination: destination.id,
       commodity,
       quantity,
+      faction,
       pay,
       postedTick: currentTick,
       deadlineTick: hardDeadline

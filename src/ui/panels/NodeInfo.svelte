@@ -6,6 +6,7 @@
   import { travelTo, cancelTravel } from "../../stores/travel";
   import { togglePanel } from "../../stores/ui";
   import { CRAWLER_SPEED_KM_S } from "../../sim/crawler/movement";
+  import { FACTIONS, nodeFaction } from "../../sim/factions/models";
   import type { GameNode } from "../../sim/economy/models";
 
   let currentSelection = $state(selection.get());
@@ -118,6 +119,11 @@
     {/if}
 
     <dl class="fields">
+      <dt>FACTION</dt>
+      <dd style="color: {FACTIONS[nodeFaction(node)].color}">
+        {FACTIONS[nodeFaction(node)].name}
+      </dd>
+
       <dt>POS</dt>
       <dd>{formatCoord(node.position[0], node.position[1])}</dd>
 

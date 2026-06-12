@@ -10,9 +10,10 @@ import { Commodity, NodeMarketSchema, QuantumSchema } from '../economy/models'
 import { BoardSchema, ContractSchema } from '../contracts/models'
 import { EngagementSchema, UnitSchema } from '../combat/models'
 import { PilotSchema } from '../pilots/models'
+import { FactionId } from '../factions/models'
 import type { SessionState } from '../session/state'
 
-export const SAVE_VERSION = 4 as const
+export const SAVE_VERSION = 5 as const
 
 const CrawlerStateSchema = z.object({
   lat: z.number(),
@@ -63,6 +64,7 @@ export const SessionStateSchema = z.object({
   engagement: EngagementSchema.nullable(),
   quanta: z.array(QuantumSchema),
   pilots: z.array(PilotSchema),
+  reputation: z.record(FactionId, z.number()),
   params: SessionParamsSchema,
   stats: SessionStatsSchema,
   endState: EndStateSchema.nullable(),

@@ -11,6 +11,7 @@ import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
 import type { Engagement, Unit } from '../combat/models'
 import type { Pilot } from '../pilots/models'
+import type { Reputation } from '../factions/models'
 
 export type EndKind = 'victory' | 'stranded' | 'bankrupt'
 
@@ -48,6 +49,8 @@ export interface SessionState {
   quanta: Quantum[]
   /** The company's pilot roster */
   pilots: Pilot[]
+  /** Standing with each faction, −1..1 */
+  reputation: Reputation
   params: SessionParams
   stats: SessionStats
   endState: EndState | null

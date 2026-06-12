@@ -14,6 +14,7 @@ import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
 import { startingForces } from '../combat/catalog'
 import { startingPilots } from '../pilots/models'
+import { emptyReputation } from '../factions/models'
 import { makeRng } from '../rng'
 import { emptyStats, type SessionState } from './state'
 
@@ -53,6 +54,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     engagement: null,
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
     pilots: startingPilots(),
+    reputation: emptyReputation(),
     params: {
       seed,
       startCredits: START_CREDITS,

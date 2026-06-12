@@ -227,6 +227,7 @@ describe('engagement through the pipeline', () => {
       destination: START_NODE,
       hostiles: 2,
       pay: 5000,
+      faction: 'settler' as const,
       postedTick: 0,
       deadlineTick: null,
       boardExpiryTick: 999999,

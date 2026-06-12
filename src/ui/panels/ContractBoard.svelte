@@ -4,7 +4,8 @@
   import { nodes } from "../../stores/world";
   import { tick } from "../../stores/time";
   import { openPanel } from "../../stores/ui";
-  import { ACTIVE_CONTRACT_SLOTS } from "../../sim/balance";
+  import { reputation } from "../../stores/reputation";
+  import { contractSlots, FACTIONS, FACTION_IDS } from "../../sim/factions/models";
   import type { Contract } from "../../sim/contracts/models";
   import { formatCredits, formatTickDuration } from "../format";
 
@@ -13,6 +14,7 @@
   let crawlerState = $state(crawler.get());
   let nodeMap = $state(nodes.get());
   let currentTick = $state(tick.get());
+  let rep = $state(reputation.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
@@ -22,9 +24,12 @@
       crawler.subscribe((v) => (crawlerState = v)),
       nodes.subscribe((v) => (nodeMap = v)),
       tick.subscribe((v) => (currentTick = v)),
+      reputation.subscribe((v) => (rep = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
+
+  let slots = $derived(contractSlots(rep));
 
   let dockedNode = $derived(crawlerState.currentNode);
   let board = $derived(dockedNode ? boardMap[dockedNode] : undefined);
@@ -43,7 +48,7 @@
 <div class="panel">
   <div class="header">
     <span class="title">CONTRACT BOARD</span>
-    <span class="slots">{active.length}/{ACTIVE_CONTRACT_SLOTS} ACTIVE</span>
+    <span class="slots">{active.length}/{slots} ACTIVE</span>
     <button class="close" onclick={() => openPanel.set(null)}>×</button>
   </div>
 
@@ -66,6 +71,9 @@
             <span class="dest">{nodeName(contract.destination)}</span>
           </div>
           <div class="row terms">
+            <span class="faction" style="color: {FACTIONS[contract.faction].color}">
+              {FACTIONS[contract.faction].name.split(" ")[0]}
+            </span>
             <span class="pay">¤ {formatCredits(contract.pay)}</span>
             {#if contract.deadlineTick !== null}
               <span class="deadline">DUE {formatTickDuration(contract.deadlineTick - currentTick)}</span>
@@ -78,6 +86,15 @@
       {/each}
     </ul>
   {/if}
+
+  <div class="rep-footer">
+    {#each FACTION_IDS as f (f)}
+      <span class="rep" style="color: {FACTIONS[f].color}" title={FACTIONS[f].name}>
+        {FACTIONS[f].name.split(" ")[0]}
+        {rep[f] >= 0 ? "+" : ""}{(rep[f] * 100).toFixed(0)}
+      </span>
+    {/each}
+  </div>
 
   {#if lastError}
     <div class="error">{lastError}</div>
@@ -182,6 +199,25 @@
 
   .pay {
     color: #00ff88;
+  }
+
+  .faction {
+    font-size: 8px;
+    letter-spacing: 1px;
+    opacity: 0.8;
+  }
+
+  .rep-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .rep {
+    font-size: 8px;
+    letter-spacing: 1px;
+    opacity: 0.75;
   }
 
   .deadline {

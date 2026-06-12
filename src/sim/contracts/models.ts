@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import { Commodity } from '../economy/models'
+import { FactionId } from '../factions/models'
 
 export const ContractType = z.enum(['hauling', 'combat'])
 export type ContractType = z.infer<typeof ContractType>
@@ -31,6 +32,8 @@ export const ContractSchema = z.object({
   quantity: z.number().optional(),
   /** Combat only — number of hostile units at the site */
   hostiles: z.number().optional(),
+  /** Issuing faction — the dominant faction at the origin node */
+  faction: FactionId,
   pay: z.number(),
   postedTick: z.number(),
   /** Hard deadline tick; null = soft expiry (never auto-fails once active) */

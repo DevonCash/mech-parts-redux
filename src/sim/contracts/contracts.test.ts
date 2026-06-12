@@ -38,6 +38,7 @@ function haulContract(overrides: Partial<Contract> = {}): Contract {
     commodity: 'metal',
     quantity: 10,
     pay: 1500,
+    faction: 'settler',
     postedTick: 0,
     deadlineTick: 1000,
     boardExpiryTick: 45000,

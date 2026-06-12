@@ -21,6 +21,7 @@ import { gameTime, tick } from './time'
 import { nodes, quanta, routes } from './world'
 import { forces } from './forces'
 import { pilots } from './pilots'
+import { reputation } from './reputation'
 import { engagement } from './combat'
 import { rngState, sessionStats } from './session-stats'
 
@@ -52,6 +53,7 @@ export function gatherSessionState(): SessionState {
     engagement: engagement.get(),
     quanta: quanta.get(),
     pilots: pilots.get(),
+    reputation: reputation.get(),
     params: sessionParams.get(),
     stats: sessionStats.get(),
     endState: endState.get(),
@@ -72,6 +74,7 @@ export function applySessionState(state: SessionState): void {
   engagement.set(state.engagement)
   quanta.set(state.quanta)
   pilots.set(state.pilots)
+  reputation.set(state.reputation)
   sessionParams.set(state.params)
   sessionStats.set(state.stats)
   endState.set(state.endState)

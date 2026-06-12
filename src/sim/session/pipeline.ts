@@ -35,6 +35,11 @@ import {
   STRESS_RECOVERY_DOCKED,
   STRESS_RECOVERY_FIELD,
 } from '../pilots/models'
+import {
+  adjustReputation,
+  REP_COMPLETED,
+  REP_FAILED,
+} from '../factions/models'
 import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
 import { checkEndConditions } from './end-conditions'
@@ -70,6 +75,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let engagement = state.engagement
   let quanta = state.quanta
   let pilots = state.pilots
+  let reputation = state.reputation
   let stats = state.stats
 
   // ── Movement + fuel ───────────────────────────────────────────────
@@ -166,6 +172,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         company = { ...company, credits: company.credits + pay, cargo }
         if (contract) {
           active = active.filter((c) => c.id !== contract.id)
+          reputation = adjustReputation(reputation, contract.faction, REP_COMPLETED)
           stats = {
             ...stats,
             contractsCompleted: stats.contractsCompleted + 1,
@@ -179,6 +186,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         }
       } else if (contract) {
         active = active.filter((c) => c.id !== contract.id)
+        reputation = adjustReputation(reputation, contract.faction, REP_FAILED)
         stats = { ...stats, contractsFailed: stats.contractsFailed + 1 }
       }
       engagement = null
@@ -195,6 +203,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
         contractsFailed: stats.contractsFailed + result.failed.length,
       }
       for (const c of result.failed) {
+        reputation = adjustReputation(reputation, c.faction, REP_FAILED)
         const what =
           c.type === 'combat'
             ? `CLEAR ${c.hostiles} HOSTILES AT ${c.destination.toUpperCase()}`
@@ -212,7 +221,14 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   if (crawler.currentNode !== null && boardStale(boards[crawler.currentNode], tick)) {
     boards = {
       ...boards,
-      [crawler.currentNode]: generateBoard(crawler.currentNode, world, rng, tick, markets),
+      [crawler.currentNode]: generateBoard(
+        crawler.currentNode,
+        world,
+        rng,
+        tick,
+        markets,
+        reputation,
+      ),
     }
   }
   // ── Quanta in transit (every tick — it's one progress add each) ──
@@ -282,6 +298,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       engagement,
       quanta,
       pilots,
+      reputation,
       stats,
       endState,
     },
