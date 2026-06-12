@@ -29,6 +29,12 @@ import {
   rollSalvage,
   survivingPlayerUnits,
 } from '../combat/engagement'
+import {
+  growSkills,
+  recoverStress,
+  STRESS_RECOVERY_DOCKED,
+  STRESS_RECOVERY_FIELD,
+} from '../pilots/models'
 import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
 import { checkEndConditions } from './end-conditions'
@@ -63,6 +69,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let forces = state.forces
   let engagement = state.engagement
   let quanta = state.quanta
+  let pilots = state.pilots
   let stats = state.stats
 
   // ── Movement + fuel ───────────────────────────────────────────────
@@ -110,8 +117,40 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
 
     if (engagement.status !== 'active') {
-      // Surviving mechs return to the roster with their damage.
-      forces = survivingPlayerUnits(engagement)
+      // Surviving mechs return to the roster with their damage; their
+      // pilots come back with their stress (and lessons, if they won).
+      // Pilots of destroyed mechs died with the cockpit.
+      const survivors = survivingPlayerUnits(engagement)
+      const survivorPilotIds = new Set(
+        survivors.map((u) => u.pilotId).filter(Boolean),
+      )
+      const won = engagement.status === 'won'
+      const nextPilots: typeof pilots = []
+      for (const pilot of pilots) {
+        const wasDeployed = engagement.units.some(
+          (u) => u.side === 'player' && u.pilotId === pilot.id,
+        )
+        if (!wasDeployed) {
+          nextPilots.push(pilot)
+          continue
+        }
+        if (!survivorPilotIds.has(pilot.id)) {
+          events.push({
+            tick,
+            kind: 'pilot-kia',
+            message: `${pilot.name} KIA`,
+          })
+          continue
+        }
+        const unitId = engagement.units.find(
+          (u) => u.side === 'player' && u.pilotId === pilot.id,
+        )?.id
+        let updated = (unitId && engagement.pilots[unitId]) || pilot
+        if (won) updated = growSkills(updated)
+        nextPilots.push(updated)
+      }
+      pilots = nextPilots
+      forces = survivors
       const contract = active.find((c) => c.id === engagement!.contractId)
 
       if (engagement.status === 'won') {
@@ -191,6 +230,13 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     const result = quantaDecisions(quanta, markets, world.routes, rng)
     quanta = result.quanta
     markets = result.markets
+
+    // Pilots wind down between fights — faster docked at a barracks.
+    if (!engagement && pilots.some((p) => p.stress > 0)) {
+      const rate =
+        crawler.currentNode !== null ? STRESS_RECOVERY_DOCKED : STRESS_RECOVERY_FIELD
+      pilots = pilots.map((p) => recoverStress(p, rate))
+    }
   }
 
   // ── End conditions ────────────────────────────────────────────────
@@ -235,6 +281,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       forces,
       engagement,
       quanta,
+      pilots,
       stats,
       endState,
     },

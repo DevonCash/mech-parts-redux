@@ -7,6 +7,7 @@
  * four-facing profiles, no heat/power budgets, no traverse, no pilots.
  */
 import { z } from 'zod'
+import { PilotSchema } from '../pilots/models'
 
 export const ComponentType = z.enum([
   'weapon',
@@ -77,6 +78,8 @@ export const UnitSchema = z.object({
   order: UnitOrderSchema,
   /** Remaining cooldown ticks per weapon, keyed `${locationId}:${index}` */
   cooldowns: z.record(z.string(), z.number()),
+  /** Roster pilot assigned to this unit (player units) */
+  pilotId: z.string().optional(),
 })
 export type Unit = z.infer<typeof UnitSchema>
 
@@ -85,6 +88,10 @@ export const EngagementSchema = z.object({
   contractId: z.string(),
   siteNodeId: z.string(),
   units: z.array(UnitSchema),
+  /** Pilot state per unit id for the engagement's duration — player
+   *  pilots are copied in at deploy and written back at the end;
+   *  hostile pilots live and die here. Same model both sides. */
+  pilots: z.record(z.string(), PilotSchema),
   status: z.enum(['active', 'won', 'lost']),
   startedTick: z.number(),
 })

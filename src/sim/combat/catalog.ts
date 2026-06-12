@@ -183,10 +183,10 @@ export function buildUnit(
   }
 }
 
-/** The company's starting lance. */
+/** The company's starting lance, paired with the starting pilots. */
 export function startingForces(): Unit[] {
   return [
-    buildUnit('mech-1', 'DUSTRUNNER', 'scout', 'player', 0, 0),
-    buildUnit('mech-2', 'HAMMERFALL', 'trooper', 'player', 0, 0),
+    { ...buildUnit('mech-1', 'DUSTRUNNER', 'scout', 'player', 0, 0), pilotId: 'pilot-1' },
+    { ...buildUnit('mech-2', 'HAMMERFALL', 'trooper', 'player', 0, 0), pilotId: 'pilot-2' },
   ]
 }

@@ -1,23 +1,31 @@
 <script lang="ts">
   import { forces, crudeRepair, precisionRepair } from "../../stores/forces";
+  import { pilots } from "../../stores/pilots";
   import { company } from "../../stores/company";
   import { openPanel } from "../../stores/ui";
   import { CHASSIS } from "../../sim/combat/catalog";
   import { quoteRepairs } from "../../sim/combat/repair";
   import { unitDestroyed } from "../../sim/combat/damage";
   import type { Unit } from "../../sim/combat/models";
+  import type { Pilot } from "../../sim/pilots/models";
 
   let roster = $state<readonly Unit[]>(forces.get());
+  let pilotRoster = $state<readonly Pilot[]>(pilots.get());
   let companyState = $state(company.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
     const unsubs = [
       forces.subscribe((v) => (roster = v)),
+      pilots.subscribe((v) => (pilotRoster = v)),
       company.subscribe((v) => (companyState = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
+
+  function pilotOf(unit: Unit): Pilot | undefined {
+    return pilotRoster.find((p) => p.id === unit.pilotId);
+  }
 
   function condition(unit: Unit): number {
     let hp = 0;
@@ -64,6 +72,22 @@
                 style="width: {frac * 100}%"
               ></span></span>
           </div>
+          {#if pilotOf(unit)}
+            {@const pilot = pilotOf(unit)!}
+            <div class="row pilot-row">
+              <span class="pilot">{pilot.name}</span>
+              <span class="skills">
+                FID {Math.round(pilot.fidelity * 100)} · JDG {Math.round(pilot.judgment * 100)}
+              </span>
+              <span class="stress-label" class:hot={pilot.stress > 0.5}>STRESS</span>
+              <span class="bar small"><span
+                  class="fill stress-fill"
+                  class:warn={pilot.stress > 0.4}
+                  class:bad={pilot.stress > 0.7}
+                  style="width: {pilot.stress * 100}%"
+                ></span></span>
+            </div>
+          {/if}
           {#if quote.damagedComponents > 0}
             <div class="row repairs">
               <button class="crude" onclick={() => repair(unit.id, "crude")}>
@@ -187,6 +211,47 @@
     background: #d0c040;
   }
   .fill.bad {
+    background: #ff5050;
+  }
+
+  .pilot-row {
+    margin-top: 3px;
+    font-size: 9px;
+  }
+
+  .pilot {
+    color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.5px;
+  }
+
+  .skills {
+    opacity: 0.45;
+    flex: 1;
+  }
+
+  .stress-label {
+    font-size: 8px;
+    letter-spacing: 1px;
+    opacity: 0.4;
+  }
+
+  .stress-label.hot {
+    color: #ff5050;
+    opacity: 0.9;
+  }
+
+  .bar.small {
+    width: 40px;
+    height: 4px;
+  }
+
+  .stress-fill {
+    background: rgba(255, 255, 255, 0.35);
+  }
+  .stress-fill.warn {
+    background: #d0c040;
+  }
+  .stress-fill.bad {
     background: #ff5050;
   }
 

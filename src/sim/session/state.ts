@@ -10,6 +10,7 @@ import type { CompanyState } from '../economy/market'
 import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
 import type { Engagement, Unit } from '../combat/models'
+import type { Pilot } from '../pilots/models'
 
 export type EndKind = 'victory' | 'stranded' | 'bankrupt'
 
@@ -45,6 +46,8 @@ export interface SessionState {
   engagement: Engagement | null
   /** NPC economy agents */
   quanta: Quantum[]
+  /** The company's pilot roster */
+  pilots: Pilot[]
   params: SessionParams
   stats: SessionStats
   endState: EndState | null
@@ -60,6 +63,8 @@ export type GameEventKind =
   | 'unit-destroyed'
   | 'engagement-won'
   | 'engagement-lost'
+  | 'pilot-kia'
+  | 'pilot-breakdown'
   | 'victory'
   | 'stranded'
   | 'bankrupt'

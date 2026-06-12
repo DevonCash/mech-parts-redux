@@ -20,6 +20,7 @@ import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
 import { nodes, quanta, routes } from './world'
 import { forces } from './forces'
+import { pilots } from './pilots'
 import { engagement } from './combat'
 import { rngState, sessionStats } from './session-stats'
 
@@ -50,6 +51,7 @@ export function gatherSessionState(): SessionState {
     forces: forces.get(),
     engagement: engagement.get(),
     quanta: quanta.get(),
+    pilots: pilots.get(),
     params: sessionParams.get(),
     stats: sessionStats.get(),
     endState: endState.get(),
@@ -69,6 +71,7 @@ export function applySessionState(state: SessionState): void {
   forces.set(state.forces)
   engagement.set(state.engagement)
   quanta.set(state.quanta)
+  pilots.set(state.pilots)
   sessionParams.set(state.params)
   sessionStats.set(state.stats)
   endState.set(state.endState)

@@ -10,6 +10,7 @@ import { makeRng } from '../sim/rng'
 import { activeContracts } from './contracts'
 import { crawler } from './crawler'
 import { forces } from './forces'
+import { pilots } from './pilots'
 import { nodes } from './world'
 import { rngState } from './session-stats'
 import { timeScale, tick } from './time'
@@ -49,6 +50,7 @@ export function deploy(contractId: string): ActionResult {
       nodeId,
       node.position,
       lance,
+      pilots.get(),
       contract.hostiles ?? 2,
       rng,
       tick.get(),

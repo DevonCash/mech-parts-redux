@@ -16,6 +16,7 @@
 
   let unit = $derived(eng?.units.find((u) => u.id === selected) ?? null);
   let chassis = $derived(unit ? CHASSIS[unit.chassisId] : null);
+  let pilot = $derived(unit && eng ? (eng.pilots[unit.id] ?? null) : null);
 
   function hpClass(frac: number): string {
     if (frac <= 0) return "dead";
@@ -32,6 +33,15 @@
       <span class="chassis">{chassis.name.toUpperCase()}</span>
       {#if unitDestroyed(unit)}<span class="kia">DESTROYED</span>{/if}
     </div>
+
+    {#if pilot}
+      <div class="pilot-line">
+        <span class="pilot-name">{pilot.name}</span>
+        <span class="pilot-stress" class:hot={pilot.stress > 0.5}>
+          STRESS {Math.round(pilot.stress * 100)}%
+        </span>
+      </div>
+    {/if}
 
     <div class="order">
       ORDER:
@@ -101,6 +111,28 @@
     color: #ff5050;
     font-size: 9px;
     letter-spacing: 1px;
+  }
+
+  .pilot-line {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .pilot-name {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .pilot-stress {
+    opacity: 0.5;
+  }
+
+  .pilot-stress.hot {
+    color: #ff5050;
+    opacity: 1;
   }
 
   .order {

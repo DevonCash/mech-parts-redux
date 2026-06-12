@@ -13,6 +13,7 @@ import { seedMarkets } from '../economy/seed-market'
 import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
 import { startingForces } from '../combat/catalog'
+import { startingPilots } from '../pilots/models'
 import { makeRng } from '../rng'
 import { emptyStats, type SessionState } from './state'
 
@@ -51,6 +52,7 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     forces: startingForces(),
     engagement: null,
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
+    pilots: startingPilots(),
     params: {
       seed,
       startCredits: START_CREDITS,

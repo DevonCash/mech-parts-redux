@@ -244,6 +244,7 @@ describe('engagement through the pipeline', () => {
         START_NODE,
         node.position,
         s.forces,
+        s.pilots,
         contract.hostiles,
         rng,
         s.tick,

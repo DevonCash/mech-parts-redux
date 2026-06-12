@@ -11,6 +11,7 @@ import {
   unitSpeedKmS,
 } from './engagement'
 import { crudeRepairAll, precisionRepairAll, quoteRepairs } from './repair'
+import { startingPilots } from '../pilots/models'
 import type { CompanyState } from '../economy/market'
 import type { Engagement, Unit } from './models'
 
@@ -140,6 +141,7 @@ describe('engagement', () => {
       'test-site',
       [0, 0],
       startingForces(),
+      startingPilots(),
       2,
       makeRng(seed),
       0,
@@ -209,6 +211,7 @@ describe('engagement', () => {
         { ...mover, order: { kind: 'move', lat: destLat, lng: 0 } },
         distant,
       ],
+      pilots: {},
       status: 'active',
       startedTick: 0,
     }
