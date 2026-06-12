@@ -37,6 +37,10 @@
     return allUnits.filter((u) => u.contractId === contractId && !unitDestroyed(u)).length;
   }
 
+  function bandUp(bandId: string): number {
+    return allUnits.filter((u) => u.bandId === bandId && !unitDestroyed(u)).length;
+  }
+
   function nodeName(id: string): string {
     return nodeMap[id]?.name?.toUpperCase() ?? id.toUpperCase();
   }
@@ -74,6 +78,11 @@
             {#if contract.type === "combat"}
               <span class="cargo combat">
                 CLEAR {hostilesUp(contract.id)}/{contract.hostiles} HOSTILES
+              </span>
+              <span class="arrow">@</span>
+            {:else if contract.type === "security"}
+              <span class="cargo combat">
+                PATROL {bandUp(contract.bandId)}/{contract.hostiles} RAIDERS
               </span>
               <span class="arrow">@</span>
             {:else}

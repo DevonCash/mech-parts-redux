@@ -65,6 +65,9 @@
             {#if contract.type === "combat"}
               <span class="cargo combat">CLEAR {contract.hostiles} HOSTILES</span>
               <span class="arrow">@</span>
+            {:else if contract.type === "security"}
+              <span class="cargo combat">PATROL — BAND ({contract.hostiles})</span>
+              <span class="arrow">@</span>
             {:else}
               <span class="cargo">{contract.quantity} {contract.commodity.toUpperCase()}</span>
               <span class="arrow">→</span>

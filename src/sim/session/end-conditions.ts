@@ -62,8 +62,9 @@ export function checkEndConditions(input: EndCheckInput): EndState | null {
     // click away.
     const deliverableHere = active.some(
       (c) =>
-        c.destination === crawlerDock &&
-        (c.type === 'combat' || (company.cargo[c.commodity] ?? 0) >= c.quantity),
+        c.type !== 'hauling' ||
+        (c.destination === crawlerDock &&
+          (company.cargo[c.commodity] ?? 0) >= c.quantity),
     )
     if (deliverableHere) return null
 

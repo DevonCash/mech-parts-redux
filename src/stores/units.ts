@@ -142,12 +142,21 @@ export function assignPilot(mechId: string, pilotId: string | null): ActionResul
   return { ok: true }
 }
 
-// ── Workshop repairs (garaged mechs, docked crawler) ────────────────
+// ── Workshop repairs ────────────────────────────────────────────────
+// The crawler IS the workshop (docs/combat/mechs.md), so repairs work
+// anywhere: on garaged mechs and on the crawler itself.
 
 function repairWith(unitId: string, fn: typeof crudeRepairAll): ActionResult {
-  if (crawlerDock.get() === null) {
-    return { ok: false, reason: 'WORKSHOP NEEDS DOCK' }
+  if (unitId === CRAWLER_UNIT_ID) {
+    const crawler = crawlerUnit()
+    if (!crawler) return { ok: false, reason: 'NO CRAWLER' }
+    const result = fn(crawler, company.get())
+    if (!result.ok) return result
+    company.set(result.company)
+    units.set(units.get().map((u) => (u.id === unitId ? result.unit : u)))
+    return { ok: true }
   }
+
   const unit = garage.get().find((u) => u.id === unitId)
   if (!unit) return { ok: false, reason: 'MECH MUST BE GARAGED' }
 

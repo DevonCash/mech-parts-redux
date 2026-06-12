@@ -57,6 +57,9 @@ export interface SessionState {
   hirePools: HirePools
   /** Mechs for sale per node */
   mechLots: MechLots
+  /** Band respawn bookkeeping: next allowed spawn tick + id serial */
+  raiderRespawnAt: number
+  raiderSerial: number
   /** Standing with each faction, −1..1 */
   reputation: Reputation
   /** What the player has observed of each node, by node id */

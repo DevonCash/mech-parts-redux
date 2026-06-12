@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { seedNodes } from '../economy/seed-nodes'
 import { generateSeedRoutes } from '../economy/seed-routes'
-import { OFFROAD_DANGER } from '../balance'
 import { marsDistance } from '../constants'
 import {
   advanceAlongOrder,
@@ -33,18 +32,16 @@ describe('order builders', () => {
     const end = order!.waypoints[order!.waypoints.length - 1]
     expect(marsDistance(start[0], start[1], ...nodes['valles-hub'].position)).toBeLessThan(1)
     expect(marsDistance(end[0], end[1], ...nodes['chryse-landing'].position)).toBeLessThan(1)
-    expect(order!.danger).toBeGreaterThan(0)
   })
 
   it('road orders return null for unreachable targets', () => {
     expect(buildRoadMoveOrder('valles-hub', 'nowhere', nodes, routes)).toBeNull()
   })
 
-  it('direct orders cut the great circle at off-road danger', () => {
+  it('direct orders cut the great circle', () => {
     const order = buildDirectMoveOrder([0, 0], nodes['valles-hub'])
     if (order.kind !== 'move') throw new Error('expected move')
     expect(order.mode).toBe('open')
-    expect(order.danger).toBe(OFFROAD_DANGER)
     expect(order.dockNodeId).toBe('valles-hub')
   })
 
@@ -60,7 +57,6 @@ describe('advanceAlongOrder', () => {
     kind: 'move',
     waypoints,
     mode,
-    danger: 0.1,
   })
 
   it('steps toward the first waypoint at base speed', () => {
@@ -124,7 +120,7 @@ describe('advanceAlongOrder', () => {
 
 describe('unitSpeedKmS', () => {
   it('crawler runs its track speed; mechs their actuators', () => {
-    expect(unitSpeedKmS(buildCrawlerUnit(0, 0))).toBeCloseTo(0.5)
+    expect(unitSpeedKmS(buildCrawlerUnit(0, 0))).toBeCloseTo(0.011)
     expect(unitSpeedKmS(buildUnit('m', 'M', 'scout', 'player', 0, 0))).toBeCloseTo(0.03)
   })
 })

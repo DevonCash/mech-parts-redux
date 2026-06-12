@@ -22,7 +22,7 @@ import { crawlerDock, garage, mechLots, units } from './units'
 import { hirePools, pilots } from './pilots'
 import { reputation } from './reputation'
 import { intel } from './intel'
-import { rngState, sessionStats } from './session-stats'
+import { raiderRespawnAt, raiderSerial, rngState, sessionStats } from './session-stats'
 
 export { rngState, sessionStats }
 
@@ -54,6 +54,8 @@ export function gatherSessionState(): SessionState {
     pilots: pilots.get(),
     hirePools: hirePools.get(),
     mechLots: mechLots.get(),
+    raiderRespawnAt: raiderRespawnAt.get(),
+    raiderSerial: raiderSerial.get(),
     reputation: reputation.get(),
     intel: intel.get(),
     params: sessionParams.get(),
@@ -78,6 +80,8 @@ export function applySessionState(state: SessionState): void {
   pilots.set(state.pilots)
   hirePools.set(state.hirePools)
   mechLots.set(state.mechLots)
+  raiderRespawnAt.set(state.raiderRespawnAt)
+  raiderSerial.set(state.raiderSerial)
   reputation.set(state.reputation)
   intel.set(state.intel)
   sessionParams.set(state.params)

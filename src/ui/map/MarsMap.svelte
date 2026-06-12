@@ -427,6 +427,9 @@
         cleanupNodes = addNodeLayer(m);
         cleanupUnits = addUnitLayer(m);
 
+        // Headless tests drive the camera through this handle.
+        if (import.meta.env.DEV) (window as any).__mechMap = m;
+
         loading = false;
       });
 

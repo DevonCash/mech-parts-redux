@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { seedNodes } from '../economy/seed-nodes'
 import { generateSeedRoutes } from '../economy/seed-routes'
 import { makeRng } from '../rng'
-import { boardStale, generateBoard, routeMetrics, type WorldStatic } from './generate'
+import { boardStale, generateBoard, routeMetrics, travelTicks, type WorldStatic } from './generate'
+import { spawnBand } from '../raiders/bands'
+import { SECURITY_PAY_BASE, SECURITY_PAY_PER_RAIDER } from '../balance'
 import {
   abandonContract,
   deliverContract,
@@ -123,9 +125,48 @@ describe('generateBoard', () => {
     for (const c of board.contracts) {
       if (c.deadlineTick === null) continue
       const metrics = routeMetrics(world, c.origin, c.destination)!
-      const eta = (metrics.effectiveKm / 0.5) * 10 // ticks at 0.5 km/s, 100ms ticks
-      expect(c.deadlineTick - 1000).toBeGreaterThan(eta)
+      expect(c.deadlineTick - 1000).toBeGreaterThan(travelTicks(metrics.effectiveKm))
     }
+  })
+
+  it('offers a patrol contract per band camped near the node', () => {
+    const route = Object.values(world.routes).find(
+      (r) => r.from === 'valles-hub' || r.to === 'valles-hub',
+    )!
+    const path = route.from === 'valles-hub' ? route.path : [...route.path].reverse()
+    const nearPoint = path[Math.floor(path.length / 4)]
+    const band = spawnBand(5, [nearPoint[0], nearPoint[1]], makeRng(5))
+
+    const board = generateBoard('valles-hub', world, makeRng(1), 0, undefined, undefined, band)
+    const offers = board.contracts.filter((c) => c.type === 'security')
+    expect(offers).toHaveLength(1)
+    expect(offers[0].bandId).toBe('band-5')
+    expect(offers[0].hostiles).toBe(band.length)
+    expect(offers[0].site).toEqual([nearPoint[0], nearPoint[1]])
+    expect(offers[0].destination).toBe('valles-hub')
+    expect(offers[0].pay).toBeGreaterThanOrEqual(
+      Math.round((SECURITY_PAY_BASE + band.length * SECURITY_PAY_PER_RAIDER) * 0.9),
+    )
+
+    // No bands in range → no patrol work.
+    const calm = generateBoard('valles-hub', world, makeRng(1), 0)
+    expect(calm.contracts.every((c) => c.type !== 'security')).toBe(true)
+  })
+
+  it('a camped road raises the danger that prices hauling work', () => {
+    // Hauling pay scales with routeMetrics meanDanger (1 + danger term),
+    // which must track live camps, not the static hash.
+    const route = Object.values(world.routes).find(
+      (r) => r.from === 'valles-hub' || r.to === 'valles-hub',
+    )!
+    const mid = route.path[Math.floor(route.path.length / 2)]
+    const band = spawnBand(5, [mid[0], mid[1]], makeRng(5))
+    const dest = route.from === 'valles-hub' ? route.to : route.from
+
+    const calm = routeMetrics(world, 'valles-hub', dest)!
+    const camped = routeMetrics(world, 'valles-hub', dest, band)!
+    expect(camped.meanDanger).toBeGreaterThan(calm.meanDanger)
+    expect(camped.effectiveKm).toBe(calm.effectiveKm)
   })
 
   it('boardStale respects the refresh interval', () => {

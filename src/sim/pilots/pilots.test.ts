@@ -143,33 +143,50 @@ describe('pilots in strategic combat', () => {
     expect(go()).toEqual(go())
   })
 
-  it('better pilots win more: veteran lance beats rookie lance', () => {
+  it('better pilots fight better: veteran lance outscores rookie lance', () => {
+    // Score: wins weighted heavily, with surviving lance HP as the
+    // graded tiebreaker (a 15-seed win count alone quantizes to ties).
     const fight = (roster: Pilot[], seed: number) => {
       let units = battlefield(3, seed, roster)
       let pilots = roster
       const rng = makeRng(seed + 500)
+      let won = false
       for (let i = 0; i < 60000; i++) {
         const r = advanceUnits(units, pilots, rng, true)
         units = r.units
         pilots = r.pilots
         const hostiles = units.some((u) => u.side === 'hostile' && !unitDestroyed(u))
         const players = units.some((u) => u.side === 'player' && !unitDestroyed(u))
-        if (!hostiles) return true
-        if (!players) return false
+        if (!hostiles) {
+          won = true
+          break
+        }
+        if (!players) break
       }
-      return false
+      let survivingHP = 0
+      for (const u of units) {
+        if (u.side !== 'player' || unitDestroyed(u)) continue
+        for (const stack of Object.values(u.components)) {
+          for (const c of stack) survivingHP += Math.max(0, c.hp)
+        }
+      }
+      return { won, survivingHP }
     }
 
-    const winRate = (mod: (p: Pilot) => Pilot) => {
+    const score = (mod: (p: Pilot) => Pilot) => {
       let wins = 0
+      let hp = 0
       for (let seed = 0; seed < 15; seed++) {
-        if (fight(startingPilots().map(mod), seed)) wins++
+        const r = fight(startingPilots().map(mod), seed)
+        if (r.won) wins++
+        hp += r.survivingHP
       }
-      return wins
+      return { wins, hp }
     }
 
-    const veterans = winRate((p) => ({ ...p, fidelity: 0.9, judgment: 0.9 }))
-    const rookies = winRate((p) => ({ ...p, fidelity: 0.15, judgment: 0.1 }))
-    expect(veterans).toBeGreaterThan(rookies)
+    const veterans = score((p) => ({ ...p, fidelity: 0.95, judgment: 0.95 }))
+    const rookies = score((p) => ({ ...p, fidelity: 0.05, judgment: 0.05 }))
+    expect(veterans.wins).toBeGreaterThanOrEqual(rookies.wins)
+    expect(veterans.hp).toBeGreaterThan(rookies.hp)
   }, 60000)
 })

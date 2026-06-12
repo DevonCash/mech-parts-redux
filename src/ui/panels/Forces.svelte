@@ -114,6 +114,36 @@
     <button class="close" onclick={() => openPanel.set(null)}>×</button>
   </div>
 
+  {#if crawler}
+    {@const quote = quoteRepairs(crawler)}
+    {@const frac = condition(crawler)}
+    <div class="section">CRAWLER</div>
+    <ul>
+      <li>
+        <div class="row">
+          <span class="name">{crawler.name}</span>
+          <span class="chassis">{CHASSIS[crawler.chassisId].name.toUpperCase()}</span>
+          <span class="bar"><span
+              class="fill"
+              class:warn={frac < 0.7}
+              class:bad={frac < 0.35}
+              style="width: {frac * 100}%"
+            ></span></span>
+        </div>
+        {#if quote.damagedComponents > 0}
+          <div class="row actions-row">
+            <button class="crude" onclick={() => act(crudeRepair(crawler.id))}>
+              CRUDE — {quote.crudeMetal} METAL
+            </button>
+            <button class="precision" onclick={() => act(precisionRepair(crawler.id))}>
+              PRECISION — {quote.precisionParts} PARTS
+            </button>
+          </div>
+        {/if}
+      </li>
+    </ul>
+  {/if}
+
   <div class="section">GARAGE</div>
   {#if stored.length === 0}
     <div class="empty">EMPTY — ALL MECHS FIELDED</div>
@@ -271,7 +301,7 @@
   {/if}
 
   <div class="note">
-    {dock ? "WORKSHOP ONLINE" : "REPAIRS REQUIRE DOCK"} · CRUDE REPAIRS DEGRADE MAX CONDITION
+    WORKSHOP ONBOARD · CRUDE REPAIRS DEGRADE MAX CONDITION
   </div>
 
   {#if lastError}

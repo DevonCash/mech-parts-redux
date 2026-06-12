@@ -4,9 +4,10 @@
  * the unified order executor in src/sim/combat/orders.ts.
  */
 
-/** Crawler base ground speed in km per game-second (open terrain).
- *  Roads double it (ROAD_SPEED_MULT in combat/orders.ts). */
-export const CRAWLER_SPEED_KM_S = 0.5
+/** Crawler base ground speed in km per game-second (open terrain):
+ *  ~40 km/h. Roads double it (ROAD_SPEED_MULT in combat/orders.ts).
+ *  Must match the crawler-tracks component in combat/catalog.ts. */
+export const CRAWLER_SPEED_KM_S = 0.011
 
 /**
  * Interpolate a position along a route path at a given progress fraction (0–1).

@@ -6,7 +6,6 @@
 import { marsDistance } from '../constants'
 import { greatCirclePath, pathDistance } from '../h3/pathfinding'
 import { findPath } from '../h3/graph'
-import { OFFROAD_DANGER } from '../balance'
 import { COMPONENTS } from './catalog'
 import type { GameNode, Route } from '../economy/models'
 import type { Unit, UnitOrder } from './models'
@@ -106,8 +105,8 @@ export function remainingKm(lat: number, lng: number, order: UnitOrder): number 
 
 /**
  * Road move order: concatenated route polylines along the A* path,
- * mean route danger, dock at the target. Requires starting at a node —
- * roads begin at nodes.
+ * docking at the target. Requires starting at a node — roads begin at
+ * nodes.
  */
 export function buildRoadMoveOrder(
   fromNodeId: string,
@@ -122,7 +121,6 @@ export function buildRoadMoveOrder(
   if (!segments || segments.length === 0) return null
 
   const waypoints: [number, number][] = []
-  let dangerSum = 0
   for (const seg of segments) {
     const route = routes[seg.routeId]
     const path = seg.reversed ? [...route.path].reverse() : route.path
@@ -130,14 +128,12 @@ export function buildRoadMoveOrder(
     for (const point of waypoints.length === 0 ? path : path.slice(1)) {
       waypoints.push(point)
     }
-    dangerSum += route.danger
   }
 
   return {
     kind: 'move',
     waypoints,
     mode: 'road',
-    danger: dangerSum / segments.length,
     dockNodeId: targetNodeId,
   }
 }
@@ -151,7 +147,6 @@ export function buildDirectMoveOrder(
     kind: 'move',
     waypoints: greatCirclePath(from, target.position),
     mode: 'open',
-    danger: OFFROAD_DANGER,
     dockNodeId: target.id,
   }
 }
@@ -165,7 +160,6 @@ export function buildGroundMoveOrder(
     kind: 'move',
     waypoints: greatCirclePath(from, to),
     mode: 'open',
-    danger: OFFROAD_DANGER,
   }
 }
 

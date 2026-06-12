@@ -11,9 +11,11 @@ import {
   assignPilot,
   buyMech,
   crawlerDock,
+  crudeRepair,
   deploy,
   garage,
   mechLots,
+  precisionRepair,
   recall,
   selectedUnit,
   setUnitOrder,
@@ -26,6 +28,7 @@ import { travelTo, travelOverland, moveCrawlerTo, cancelTravel } from './stores/
 import { nodes, quanta, routes } from './stores/world'
 import { openPanel } from './stores/ui'
 import { quantumPosition } from './sim/economy/quanta'
+import { bandsNearNode, liveBandIds, liveCamps, routeLiveDanger } from './sim/raiders/bands'
 
 export function installDebugHandle(): void {
   ;(window as any).__mech = {
@@ -52,6 +55,10 @@ export function installDebugHandle(): void {
     },
     helpers: {
       quantumPosition,
+      bandsNearNode,
+      liveBandIds,
+      liveCamps,
+      routeLiveDanger,
     },
     actions: {
       startNewSession,
@@ -69,6 +76,8 @@ export function installDebugHandle(): void {
       buyFuel,
       tradeCommodity,
       emergencyResupply,
+      crudeRepair,
+      precisionRepair,
     },
   }
 }

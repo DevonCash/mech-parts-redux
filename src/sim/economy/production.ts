@@ -42,8 +42,8 @@ function recipesFor(node: GameNode): Recipe[] {
         // goods. Separate recipes so each drains independently — one
         // running out must not stall consumption of the other.
         { inputs: [['water', 2]], outputs: [['food', 6]] },
-        { inputs: [['medical', 0.5]], outputs: [] },
-        { inputs: [['electronics', 0.25]], outputs: [] },
+        { inputs: [['medical', 0.05]], outputs: [] },
+        { inputs: [['electronics', 0.025]], outputs: [] },
       ]
     case 'depot':
       return [] // depots store, they don't make

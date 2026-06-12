@@ -54,7 +54,7 @@
         <dd>{stats.contractsCompleted}</dd>
         <dt>CONTRACTS FAILED</dt>
         <dd>{stats.contractsFailed}</dd>
-        <dt>AMBUSHES SURVIVED</dt>
+        <dt>RAIDERS DESTROYED</dt>
         <dd>{stats.ambushes}</dd>
         <dt>CREDITS EARNED</dt>
         <dd>¤ {formatCredits(stats.creditsEarned)}</dd>

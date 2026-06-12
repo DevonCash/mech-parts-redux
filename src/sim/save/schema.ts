@@ -59,6 +59,9 @@ export const SessionStateSchema = z.object({
   // defaults keep pre-recruitment v6 saves loadable
   hirePools: z.record(z.string(), HirePoolSchema).default({}),
   mechLots: z.record(z.string(), MechLotSchema).default({}),
+  // defaults keep pre-raider saves loadable (bands respawn naturally)
+  raiderRespawnAt: z.number().default(0),
+  raiderSerial: z.number().default(1000),
   reputation: z.record(FactionId, z.number()),
   // default({}) keeps pre-intel saves loadable
   intel: z.record(z.string(), NodeIntelSchema).default({}),

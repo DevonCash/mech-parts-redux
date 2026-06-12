@@ -20,8 +20,8 @@ import {
 } from './models'
 import { round2 } from './seed-market'
 
-/** Hauler ground speed in km per game-second (crawler runs 0.5). */
-export const QUANTUM_SPEED_KM_S = 0.3
+/** Hauler truck ground speed in km per game-second: ~80 km/h. */
+export const QUANTUM_SPEED_KM_S = 0.022
 
 const TICK_S = TICK_DURATION_MS / 1000
 

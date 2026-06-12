@@ -10,3 +10,7 @@ export const sessionStats = atom<SessionStats>(emptyStats())
 
 /** Serialized PRNG state — actions that consume randomness thread it through here. */
 export const rngState = atom<number>(0)
+
+/** Raider band respawn bookkeeping (pipeline-owned). */
+export const raiderRespawnAt = atom<number>(0)
+export const raiderSerial = atom<number>(0)

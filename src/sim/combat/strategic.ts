@@ -92,6 +92,51 @@ export function distanceKm(a: Unit, b: Unit): number {
   return marsDistance(a.lat, a.lng, b.lat, b.lng)
 }
 
+/** Hostiles ignore enemies more than this far inside their own deadzone. */
+const DRIFT_DEADZONE_KM = 0.5
+
+function hasCooldowns(unit: Unit): boolean {
+  for (const _ in unit.cooldowns) return true
+  return false
+}
+
+/**
+ * True when no interaction is possible this tick: every living hostile
+ * is parked at its camp with cold guns and no enemy inside its leash,
+ * and every living player unit is order-quiet with a steady pilot.
+ * Under these conditions the full pass would do nothing but execute
+ * player move orders — and consume no rng — so advanceUnits can take
+ * a cheap movement-only path. Transit is almost always quiet; this is
+ * what keeps 16 permanent units affordable at 1000× compression.
+ */
+function quietWorld(inputUnits: Unit[], roster: Pilot[]): boolean {
+  for (const u of inputUnits) {
+    if (unitDestroyed(u)) continue
+    if (u.order.kind === 'attack' || hasCooldowns(u)) return false
+
+    if (u.side === 'player') {
+      if (u.pilotId) {
+        const pilot = roster.find((p) => p.id === u.pilotId)
+        if (pilot && breakdown(pilot) !== null) return false
+      }
+      continue
+    }
+
+    if (u.order.kind !== 'hold' || !u.spawn) return false
+    // Settled at camp? (Otherwise it owes a drift-home step.)
+    if (Math.abs(u.lat - u.spawn[0]) * KM_PER_DEG > DRIFT_DEADZONE_KM) return false
+    if (marsDistance(u.lat, u.lng, u.spawn[0], u.spawn[1]) > DRIFT_DEADZONE_KM) return false
+    // Any enemy inside the leash wakes the band.
+    const leash = u.leashKm ?? LEASH_KM
+    for (const p of inputUnits) {
+      if (p.side !== 'player' || unitDestroyed(p)) continue
+      if (Math.abs(u.spawn[0] - p.lat) * KM_PER_DEG > leash) continue
+      if (marsDistance(u.spawn[0], u.spawn[1], p.lat, p.lng) <= leash) return false
+    }
+  }
+  return true
+}
+
 /**
  * Advance every unit one tick. Pure. `crawlerCanMove` lets the
  * pipeline gate the crawler on fuel without this stage knowing about
@@ -103,11 +148,31 @@ export function advanceUnits(
   rng: Rng,
   crawlerCanMove: boolean,
 ): StrategicResult {
+  if (quietWorld(inputUnits, roster)) {
+    const docked: { unitId: string; nodeId: string }[] = []
+    let units = inputUnits
+    inputUnits.forEach((unit, i) => {
+      if (unit.side !== 'player' || unit.order.kind !== 'move') return
+      if (unit.id === CRAWLER_UNIT_ID && !crawlerCanMove) return
+      if (unitDestroyed(unit)) return
+      const step = advanceAlongOrder(unit.lat, unit.lng, unit.order, unitSpeedKmS(unit), TICK_S)
+      const dockNodeId = unit.order.dockNodeId
+      if (units === inputUnits) units = [...inputUnits]
+      units[i] = { ...unit, lat: step.lat, lng: step.lng, order: step.order }
+      if (step.arrived && dockNodeId) docked.push({ unitId: unit.id, nodeId: dockNodeId })
+    })
+    return { units, pilots: roster, events: [], docked }
+  }
   const events: StrategicEvent[] = []
   const docked: { unitId: string; nodeId: string }[] = []
   const units = new Map(inputUnits.map((u) => [u.id, u]))
   const rosterById = new Map(roster.map((p) => [p.id, p]))
-  const anyHostiles = inputUnits.some((u) => u.side === 'hostile' && !unitDestroyed(u))
+  // Destroyed-state cache — checking components per unit pair every
+  // tick dominates the profile otherwise. Maintained on kills below.
+  const destroyedIds = new Set<string>()
+  for (const u of inputUnits) {
+    if (unitDestroyed(u)) destroyedIds.add(u.id)
+  }
   const order = [...units.keys()].sort()
 
   const pilotOf = (unit: Unit): Pilot =>
@@ -123,13 +188,9 @@ export function advanceUnits(
 
   for (const unitId of order) {
     let unit = units.get(unitId)!
-    if (unitDestroyed(unit)) continue
+    if (destroyedIds.has(unitId)) continue
 
     let pilot = pilotOf(unit)
-    // Prolonged contact grinds everyone down a little.
-    if (anyHostiles && unit.side === 'player') {
-      pilot = addStress(pilot, STRESS_PER_COMBAT_TICK)
-    }
     const failure = breakdown(pilot)
 
     // Cooldowns tick down regardless of orders.
@@ -157,16 +218,22 @@ export function advanceUnits(
       let nearest: Unit | null = null
       let nearestDist =
         failure === 'berserk' || unit.side === 'hostile' ? Infinity : AGGRO_RANGE_KM
+      const leash = unit.leashKm ?? LEASH_KM
       for (const other of units.values()) {
-        if (other.side === unit.side || unitDestroyed(other)) continue
-        if (
-          unit.side === 'hostile' &&
-          failure !== 'berserk' &&
-          unit.spawn &&
-          marsDistance(unit.spawn[0], unit.spawn[1], other.lat, other.lng) > LEASH_KM
-        ) {
-          continue // outside the patch this garrison defends
+        if (other.side === unit.side || destroyedIds.has(other.id)) continue
+        // Latitude lower-bounds the great-circle distance (1° ≈ 59.2 km)
+        // — a cheap reject before the haversine for the common case of
+        // far-apart units.
+        // Hostiles never leave their patch, berserk or not — a band
+        // that survives a fight must not pursue across the planet
+        // (npc stress has no recovery path).
+        if (unit.side === 'hostile' && unit.spawn) {
+          if (Math.abs(unit.spawn[0] - other.lat) * KM_PER_DEG > leash) continue
+          if (marsDistance(unit.spawn[0], unit.spawn[1], other.lat, other.lng) > leash) {
+            continue // outside the patch this unit defends
+          }
         }
+        if (Math.abs(unit.lat - other.lat) * KM_PER_DEG > nearestDist) continue
         const d = distanceKm(unit, other)
         if (d < nearestDist) {
           nearest = other
@@ -174,6 +241,12 @@ export function advanceUnits(
         }
       }
       target = nearest
+    }
+
+    // Live contact grinds a pilot down — engaged means having a target,
+    // not sharing a planet with hostiles (bands camp permanently now).
+    if (target && unit.side === 'player') {
+      pilot = addStress(pilot, STRESS_PER_COMBAT_TICK)
     }
 
     // ── Movement ──────────────────────────────────────────────────
@@ -241,6 +314,7 @@ export function advanceUnits(
         updatePilot(result.unit, addStress(targetPilot, (template.damage ?? 0) * STRESS_PER_DAMAGE))
         target = units.get(target.id)!
         if (result.destroyed.length > 0 && unitDestroyed(target)) {
+          destroyedIds.add(target.id)
           events.push({
             kind: 'unit-destroyed',
             message: `${target.name} DESTROYED`,

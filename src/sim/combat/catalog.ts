@@ -85,7 +85,8 @@ export const COMPONENTS: Record<string, ComponentTemplate> = {
     type: 'locomotion',
     maxHP: 120,
     hardness: 4,
-    topSpeedKmS: 0.5,
+    // 40 km/h open ground; roads double it. A mining rig, not a hovercar.
+    topSpeedKmS: 0.011,
   },
   // The player IS this component. Destruction = game over
   // (docs/characters/player.md).
@@ -95,6 +96,35 @@ export const COMPONENTS: Record<string, ComponentTemplate> = {
     type: 'cockpit',
     maxHP: 60,
     hardness: 4,
+  },
+  // ── Technicals — raider trucks ─────────────────────────────────────
+  // Fast enough to run down a crawler; the rifle can't crack hull
+  // plating (hardness 10) but chews drive tracks — harassment, not
+  // execution.
+  rifle: {
+    id: 'rifle',
+    name: 'Recoilless Rifle',
+    type: 'weapon',
+    maxHP: 15,
+    hardness: 0,
+    damage: 10,
+    rangeKm: 1.1,
+    cooldownTicks: 30,
+  },
+  wheels: {
+    id: 'wheels',
+    name: 'Off-road Wheels',
+    type: 'locomotion',
+    maxHP: 30,
+    hardness: 1,
+    topSpeedKmS: 0.035, // ~126 km/h — outruns the crawler, not a mech shell
+  },
+  'truck-frame': {
+    id: 'truck-frame',
+    name: 'Truck Frame',
+    type: 'structure',
+    maxHP: 40,
+    hardness: 1,
   },
 }
 
@@ -145,6 +175,15 @@ export const CHASSIS: Record<string, Chassis> = {
       { id: 'legs', label: 'LEGS', hitWeight: 3, parent: 'torso' },
     ],
   },
+  technical: {
+    id: 'technical',
+    name: 'Armed Technical',
+    locations: [
+      { id: 'cab', label: 'CAB', hitWeight: 3 },
+      { id: 'bed', label: 'BED', hitWeight: 4, parent: 'cab' },
+      { id: 'wheels', label: 'WHEELS', hitWeight: 3, parent: 'cab' },
+    ],
+  },
   crawler: {
     id: 'crawler',
     name: 'Mobile Operations Crawler',
@@ -188,6 +227,11 @@ const LOADOUTS: Record<string, Record<string, string[]>> = {
     hull: ['hull-plate', 'autocannon'], // one defensive gun behind the plate
     tracks: ['crawler-tracks'],
     core: ['server-core'],
+  },
+  technical: {
+    cab: ['cockpit'],
+    bed: ['rifle', 'truck-frame'],
+    wheels: ['wheels'],
   },
 }
 

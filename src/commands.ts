@@ -25,6 +25,10 @@ export const commandMeta: Record<string, { label: string; symbol: string }> = {
     label: "Cruise (100x)",
     symbol: "⏭",
   },
+  "game-time.burn": {
+    label: "Max Compression (1000x)",
+    symbol: "⏭⏭",
+  },
   "pause-menu.resume": {
     label: "Resume Game",
     symbol: "▶",

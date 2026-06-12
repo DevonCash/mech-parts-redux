@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { makeRng } from '../rng'
 import { buildCrawlerUnit, buildUnit, startingGarage, CRAWLER_UNIT_ID } from './catalog'
 import { unitDestroyed } from './damage'
-import { buildGroundMoveOrder } from './orders'
+import { buildGroundMoveOrder, unitSpeedKmS } from './orders'
 import {
   advanceUnits,
   AGGRO_RANGE_KM,
@@ -11,6 +11,9 @@ import {
   rollSalvage,
   spawnHostiles,
 } from './strategic'
+import { spawnBand } from '../raiders/bands'
+import { marsDistance } from '../constants'
+import { TECHNICAL_LEASH_KM } from '../balance'
 import { startingPilots } from '../pilots/models'
 import type { CombatContract } from '../contracts/models'
 import type { Unit } from './models'
@@ -194,7 +197,6 @@ describe('advanceUnits — strategic combat', () => {
         kind: 'move' as const,
         waypoints: [[0.001, 0]] as [number, number][],
         mode: 'open' as const,
-        danger: 0,
         dockNodeId: 'port',
       },
     }
@@ -211,6 +213,87 @@ describe('advanceUnits — strategic combat', () => {
       }
     }
     expect(dockedAt).toBe('port')
+  })
+})
+
+describe('raider technicals vs the crawler', () => {
+  /** First technical of a band camped at [0,0]. */
+  function technicalAt(seed = 1): Unit {
+    const band = spawnBand(1, [0, 0], makeRng(seed))
+    return band.find((u) => u.chassisId === 'technical')!
+  }
+
+  /** Crawler with its defensive gun disabled — pure prey. */
+  function disarmedCrawler(lat: number, lng: number): Unit {
+    const crawler = buildCrawlerUnit(lat, lng)
+    return {
+      ...crawler,
+      components: {
+        ...crawler.components,
+        hull: crawler.components.hull.map((c) =>
+          c.templateId === 'autocannon' ? { ...c, hp: 0 } : c,
+        ),
+      },
+    }
+  }
+
+  it('rifle fire deflects off hull plating but chews the drive tracks', () => {
+    // Crawler crossing the camp's patch, ~2 km out, unable to shoot back.
+    const crawler = {
+      ...disarmedCrawler(0.034, 0),
+      order: {
+        kind: 'move' as const,
+        waypoints: [[1.5, 0]] as [number, number][],
+        mode: 'open' as const,
+      },
+    }
+    let units: Unit[] = [crawler, technicalAt()]
+    let pilots = startingPilots()
+    const rng = makeRng(8)
+    for (let i = 0; i < 3000; i++) {
+      const r = advanceUnits(units, pilots, rng, true)
+      units = r.units
+      pilots = r.pilots
+    }
+    const after = units.find((u) => u.id === CRAWLER_UNIT_ID)!
+    const plate = after.components.hull.find((c) => c.templateId === 'hull-plate')!
+    const tracks = after.components.tracks[0]
+    expect(plate.hp).toBe(plate.maxHP) // rifle (10) cannot beat hardness 10
+    expect(tracks.hp).toBeLessThan(tracks.maxHP) // hardness 4 lets 6 through
+    expect(unitDestroyed(after)).toBe(false) // harassment, not execution
+  })
+
+  it('damaged tracks slow the crawler proportionally', () => {
+    const crawler = buildCrawlerUnit(0, 0)
+    const full = unitSpeedKmS(crawler)
+    const limping = {
+      ...crawler,
+      components: {
+        ...crawler.components,
+        tracks: crawler.components.tracks.map((c) => ({ ...c, hp: c.maxHP / 2 })),
+      },
+    }
+    expect(unitSpeedKmS(limping)).toBeCloseTo(full / 2, 10)
+  })
+
+  it('a technical ignores traffic beyond its leash and holds its camp', () => {
+    // Crawler parked ~18 km out — outside TECHNICAL_LEASH_KM.
+    const crawler = disarmedCrawler(0.3, 0)
+    const tech = technicalAt()
+    let units: Unit[] = [crawler, tech]
+    let pilots = startingPilots()
+    const rng = makeRng(2)
+    for (let i = 0; i < 500; i++) {
+      const r = advanceUnits(units, pilots, rng, true)
+      units = r.units
+      pilots = r.pilots
+    }
+    const after = units.find((u) => u.id === tech.id)!
+    expect(
+      marsDistance(after.lat, after.lng, tech.spawn![0], tech.spawn![1]),
+    ).toBeLessThan(TECHNICAL_LEASH_KM)
+    const crawlerAfter = units.find((u) => u.id === CRAWLER_UNIT_ID)!
+    expect(crawlerAfter.components).toEqual(crawler.components)
   })
 })
 

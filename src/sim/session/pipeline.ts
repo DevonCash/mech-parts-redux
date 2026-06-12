@@ -11,21 +11,21 @@
  * stage cheap and allocation-light on the no-op path.
  */
 import {
-  AMBUSH_CARGO_LOSS_MAX,
-  AMBUSH_CARGO_LOSS_MIN,
-  AMBUSH_CREDIT_LOSS_MAX,
-  AMBUSH_RATE_PER_TICK,
   ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
+  RAIDER_BAND_TARGET,
+  RAIDER_RESPAWN_TICKS,
   SALVAGE_MECH_CHANCE,
 } from '../balance'
 import { TICK_DURATION_MS } from '../tick'
+import { CRAWLER_SPEED_KM_S } from '../crawler/movement'
 import { econStep } from '../economy/production'
 import { moveQuanta, quantaDecisions } from '../economy/quanta'
 import type { Commodity } from '../economy/models'
 import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
 import { CHASSIS, CRAWLER_UNIT_ID } from '../combat/catalog'
+import { liveBandIds, pickCampSite, spawnBand } from '../raiders/bands'
 import { generateMechLot, mechLotStale } from '../combat/sales'
 import { generateHirePool, hirePoolStale } from '../pilots/hiring'
 import { unitDestroyed } from '../combat/damage'
@@ -53,8 +53,10 @@ const TICK_S = TICK_DURATION_MS / 1000
 
 /** Fuel burned per tick while the crawler executes a move order.
  *  Flat per tick: roads move twice the ground per tick at the same
- *  burn, which is exactly the old effective-km accounting. */
-export const FUEL_BURN_PER_TICK = 0.5 * TICK_S * FUEL_PER_EFFECTIVE_KM
+ *  burn, which is exactly the old effective-km accounting. Derives
+ *  from the crawler's base speed, so per-trip fuel cost is
+ *  speed-invariant. */
+export const FUEL_BURN_PER_TICK = CRAWLER_SPEED_KM_S * TICK_S * FUEL_PER_EFFECTIVE_KM
 
 /** A combat contract is "engaged" (deadline-exempt) when a player unit
  *  is this close to its site. */
@@ -90,6 +92,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let pilots = state.pilots
   let hirePools = state.hirePools
   let mechLots = state.mechLots
+  let raiderRespawnAt = state.raiderRespawnAt
+  let raiderSerial = state.raiderSerial
   let reputation = state.reputation
   let intel = state.intel
   let stats = state.stats
@@ -116,6 +120,11 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       }
       events.push({ tick, kind: e.kind, message: e.message })
 
+      // Stats: the old ambush counter now tallies raiders destroyed.
+      if (e.kind === 'unit-destroyed' && e.side === 'hostile') {
+        stats = { ...stats, ambushes: stats.ambushes + 1 }
+      }
+
       // A dead player mech takes its pilot with it (cockpit rule).
       if (e.kind === 'unit-destroyed' && e.side === 'player' && e.unitId !== CRAWLER_UNIT_ID) {
         const dead = units.find((u) => u.id === e.unitId)
@@ -141,30 +150,27 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
   }
 
-  // ── Crawler fuel + road ambush dice ───────────────────────────────
+  // ── Crawler fuel ──────────────────────────────────────────────────
+  // Route risk is no longer dice — raider bands are live units that
+  // the strategic stage above handles like everything else.
   if (crawlerMoving && crawlerCanMove) {
     const fuel = Math.max(0, company.fuel - FUEL_BURN_PER_TICK)
     company = { ...company, fuel }
     if (fuel <= 0 && findCrawler(units)?.order.kind === 'move') {
       events.push({ tick, kind: 'fuel-empty', message: 'FUEL EXHAUSTED — CRAWLER HALTED' })
     }
-
-    // Abstract route risk until raider quanta become live units.
-    const order = crawlerBefore!.order
-    if (order.kind === 'move' && rng.next() < order.danger * AMBUSH_RATE_PER_TICK) {
-      const result = applyAmbush(company, rng)
-      company = result.company
-      stats = { ...stats, ambushes: stats.ambushes + 1 }
-      events.push({ tick, kind: 'ambush', message: result.message })
-    }
   }
 
-  // ── Combat contract resolution: last hostile down → paid ──────────
+  // ── Combat/security resolution: last hostile down → paid ──────────
   for (const contract of active) {
-    if (contract.type !== 'combat') continue
-    const tagged = units.filter((u) => u.contractId === contract.id)
-    if (tagged.length === 0) continue // never spawned (shouldn't happen)
+    if (contract.type === 'hauling') continue
+    const tagged =
+      contract.type === 'combat'
+        ? units.filter((u) => u.contractId === contract.id)
+        : units.filter((u) => u.bandId === contract.bandId)
+    if (contract.type === 'combat' && tagged.length === 0) continue // never spawned
     if (tagged.some((u) => !unitDestroyed(u))) continue
+    // (A security target band fully despawned counts as cleared.)
 
     // One wreck is sometimes towable — it joins the garage as-is,
     // dead components and all, needing real repairs before it fights.
@@ -200,7 +206,11 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     if (precision > 0) cargo = addCargo(cargo, 'precision', precision)
 
     company = { ...company, credits: company.credits + contract.pay, cargo }
-    units = units.filter((u) => u.contractId !== contract.id)
+    units = units.filter((u) =>
+      contract.type === 'combat'
+        ? u.contractId !== contract.id
+        : u.bandId !== contract.bandId,
+    )
     active = active.filter((c) => c.id !== contract.id)
     reputation = adjustReputation(reputation, contract.faction, REP_COMPLETED)
     stats = {
@@ -227,11 +237,12 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     const playerUnits = units.filter((u) => u.side === 'player' && !unitDestroyed(u))
     const engagedIds = active
       .filter((c) => {
-        if (c.type !== 'combat') return false
-        const site = world.nodes[c.destination]
+        if (c.type === 'hauling') return false
+        const site =
+          c.type === 'security' ? c.site : world.nodes[c.destination]?.position
         if (!site) return false
         return playerUnits.some(
-          (u) => marsDistance(u.lat, u.lng, site.position[0], site.position[1]) <= ENGAGED_KM,
+          (u) => marsDistance(u.lat, u.lng, site[0], site[1]) <= ENGAGED_KM,
         )
       })
       .map((c) => c.id)
@@ -248,14 +259,17 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       stats = { ...stats, contractsFailed: stats.contractsFailed + failed.length }
       for (const c of failed) {
         reputation = adjustReputation(reputation, c.faction, REP_FAILED)
-        // The garrison stands down (future: persist as world raiders).
+        // Failed combat garrisons stand down; a failed patrol's band
+        // just keeps camping — it lives in the world either way.
         if (c.type === 'combat') {
           units = units.filter((u) => u.contractId !== c.id)
         }
         const what =
           c.type === 'combat'
             ? `CLEAR ${c.hostiles} HOSTILES AT ${c.destination.toUpperCase()}`
-            : `${c.quantity} ${c.commodity.toUpperCase()} TO ${c.destination.toUpperCase()}`
+            : c.type === 'security'
+              ? `PATROL — DESTROY BAND (${c.hostiles})`
+              : `${c.quantity} ${c.commodity.toUpperCase()} TO ${c.destination.toUpperCase()}`
         events.push({
           tick,
           kind: 'contract-failed',
@@ -269,7 +283,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   if (crawlerDock !== null && boardStale(boards[crawlerDock], tick)) {
     boards = {
       ...boards,
-      [crawlerDock]: generateBoard(crawlerDock, world, rng, tick, markets, reputation),
+      [crawlerDock]: generateBoard(crawlerDock, world, rng, tick, markets, reputation, units),
     }
   }
   if (crawlerDock !== null && hirePoolStale(hirePools[crawlerDock], tick)) {
@@ -285,9 +299,16 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
 
   // ── Economy step: production, pricing, quanta decisions ──────────
   if (tick % ECON_INTERVAL === 0) {
+    const liveBands = liveBandIds(units)
     const pruned: typeof boards = {}
     for (const [nodeId, board] of Object.entries(boards)) {
-      pruned[nodeId] = pruneBoard(board, tick)
+      const base = pruneBoard(board, tick)
+      // Drop patrol offers whose target band is already gone.
+      const kept = base.contracts.filter(
+        (c) => c.type !== 'security' || liveBands.has(c.bandId),
+      )
+      pruned[nodeId] =
+        kept.length === base.contracts.length ? base : { ...base, contracts: kept }
     }
     boards = pruned
 
@@ -301,6 +322,16 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     if (pilots.some((p) => p.stress > 0)) {
       const rate = crawlerDock !== null ? STRESS_RECOVERY_DOCKED : STRESS_RECOVERY_FIELD
       pilots = pilots.map((p) => recoverStress(p, rate))
+    }
+  }
+
+  // ── Raider band maintenance: the world never pacifies ────────────
+  if (tick % ECON_INTERVAL === 0 && tick >= raiderRespawnAt) {
+    if (liveBandIds(units).size < RAIDER_BAND_TARGET) {
+      const camp = pickCampSite(world, rng)
+      units = [...units, ...spawnBand(raiderSerial, camp, rng)]
+      raiderSerial = raiderSerial + 1
+      raiderRespawnAt = tick + RAIDER_RESPAWN_TICKS
     }
   }
 
@@ -375,41 +406,13 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       pilots,
       hirePools,
       mechLots,
+      raiderRespawnAt,
+      raiderSerial,
       reputation,
       intel,
       stats,
       endState,
     },
     events,
-  }
-}
-
-function applyAmbush(
-  company: SessionState['company'],
-  rng: ReturnType<typeof makeRng>,
-): { company: SessionState['company']; message: string } {
-  const held = Object.entries(company.cargo).filter(([, qty]) => (qty ?? 0) > 0)
-
-  if (held.length > 0) {
-    const fraction = rng.range(AMBUSH_CARGO_LOSS_MIN, AMBUSH_CARGO_LOSS_MAX)
-    const cargo = { ...company.cargo }
-    const losses: string[] = []
-    for (const [c, qty] of held) {
-      const lost = Math.max(1, Math.floor((qty ?? 0) * fraction))
-      const remaining = (qty ?? 0) - lost
-      if (remaining <= 0) delete cargo[c as Commodity]
-      else cargo[c as Commodity] = remaining
-      losses.push(`${lost} ${c.toUpperCase()}`)
-    }
-    return {
-      company: { ...company, cargo },
-      message: `AMBUSH — RAIDERS TOOK ${losses.join(', ')}`,
-    }
-  }
-
-  const lost = Math.min(company.credits, rng.int(50, AMBUSH_CREDIT_LOSS_MAX))
-  return {
-    company: { ...company, credits: company.credits - lost },
-    message: `AMBUSH — EXTORTED ${lost} CREDITS`,
   }
 }

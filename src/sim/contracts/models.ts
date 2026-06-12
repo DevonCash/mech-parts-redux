@@ -3,7 +3,8 @@
  * narrows on `type` and the compiler enforces field access.
  *
  * Hauling: move commodity cargo origin → destination.
- * Combat: clear hostiles at the destination node (deploy mechs there).
+ * Combat: clear a garrison at the destination node.
+ * Security: destroy a raider band camped near the issuing node.
  */
 import { z } from 'zod'
 import { Commodity } from '../economy/models'
@@ -49,9 +50,21 @@ export const CombatContractSchema = ContractBase.extend({
 })
 export type CombatContract = z.infer<typeof CombatContractSchema>
 
+export const SecurityContractSchema = ContractBase.extend({
+  type: z.literal('security'),
+  /** The raider band to destroy (a live world band, not spawned) */
+  bandId: z.string(),
+  /** Band size at posting (pay basis + UI) */
+  hostiles: z.number(),
+  /** The band's camp, for the map/UI */
+  site: z.tuple([z.number(), z.number()]),
+})
+export type SecurityContract = z.infer<typeof SecurityContractSchema>
+
 export const ContractSchema = z.discriminatedUnion('type', [
   HaulingContractSchema,
   CombatContractSchema,
+  SecurityContractSchema,
 ])
 export type Contract = z.infer<typeof ContractSchema>
 export type ContractType = Contract['type']

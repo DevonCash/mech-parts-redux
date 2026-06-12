@@ -11,6 +11,7 @@ import { quote, addCargo, cargoUsed, executeTrade } from '../economy/market'
 import { abandonContract, deliverContract } from '../contracts/update'
 import { routeMetrics, type WorldStatic } from '../contracts/generate'
 import { buildRoadMoveOrder } from '../combat/orders'
+import { crudeRepairAll, quoteRepairs } from '../combat/repair'
 import { CRAWLER_UNIT_ID } from '../combat/catalog'
 import { createSession } from './new-game'
 import { advanceTick, findCrawler } from './pipeline'
@@ -59,7 +60,10 @@ function departOneHop(state: SessionState, destination: string): SessionState | 
   }
 }
 
-/** Bot turn while docked: deliver, then refuel, then accept and depart. */
+/** Metal kept aboard so the onboard workshop can always patch tracks. */
+const METAL_RESERVE = 15
+
+/** Bot turn while docked: deliver, repair, refuel, accept, depart. */
 function dockedTurn(state: SessionState): SessionState {
   const nodeId = state.crawlerDock!
   const market = state.markets[nodeId]
@@ -67,9 +71,10 @@ function dockedTurn(state: SessionState): SessionState {
   let active = state.active
   let boards = state.boards
   let markets = state.markets
+  let units = state.units
 
-  // Deliver anything due here first — pay funds the refuel. If ambushes
-  // ate contract cargo, do what a player does: buy replacements off the
+  // Deliver anything due here first — pay funds the refuel. If the
+  // hold is short, do what a player does: buy replacements off the
   // local market, and failing that, cut losses and abandon.
   for (const contract of [...active]) {
     if (contract.destination !== nodeId) continue
@@ -91,6 +96,41 @@ function dockedTurn(state: SessionState): SessionState {
       const dropped = abandonContract(company, contract)
       company = dropped.company
       active = active.filter((c) => c.id !== contract.id)
+    }
+  }
+
+  // Workshop onboard: patch the crawler every dock turn (raider rifles
+  // chew tracks in transit; ignored damage compounds into blown
+  // deadlines), then top the metal reserve back up.
+  const crawler = units.find((u) => u.id === CRAWLER_UNIT_ID)
+  if (crawler) {
+    const repairQuote = quoteRepairs(crawler)
+    if (repairQuote.damagedComponents > 0) {
+      const shortMetal = repairQuote.crudeMetal - (company.cargo.metal ?? 0)
+      if (shortMetal > 0) {
+        const buy = executeTrade(company, markets[nodeId], 'metal', shortMetal, 'buy')
+        if (buy.ok) {
+          company = buy.company
+          markets = { ...markets, [nodeId]: buy.market }
+        }
+      }
+      const fixed = crudeRepairAll(crawler, company)
+      if (fixed.ok) {
+        company = fixed.company
+        units = units.map((u) => (u.id === CRAWLER_UNIT_ID ? fixed.unit : u))
+      }
+    }
+    const reserveShort = METAL_RESERVE - (company.cargo.metal ?? 0)
+    if (
+      reserveShort > 0 &&
+      cargoUsed(company) + reserveShort <= company.cargoCapacity &&
+      company.credits > 500
+    ) {
+      const buy = executeTrade(company, markets[nodeId], 'metal', reserveShort, 'buy')
+      if (buy.ok) {
+        company = buy.company
+        markets = { ...markets, [nodeId]: buy.market }
+      }
     }
   }
 
@@ -150,7 +190,7 @@ function dockedTurn(state: SessionState): SessionState {
     }
   }
 
-  let next = { ...state, company, active, boards, markets }
+  let next = { ...state, company, active, boards, markets, units }
 
   // Head one hop toward the active contract's destination
   if (active.length > 0) {
@@ -161,8 +201,11 @@ function dockedTurn(state: SessionState): SessionState {
   return next
 }
 
-function playSession(seed: number, maxTicks: number): SessionState {
+function playSession(seed: number, maxTicks: number, creditTarget?: number): SessionState {
   let state = createSession(seed, world)
+  if (creditTarget) {
+    state = { ...state, params: { ...state.params, creditTarget } }
+  }
   let guard = 0
 
   while (state.tick < maxTicks && !state.endState) {
@@ -172,15 +215,30 @@ function playSession(seed: number, maxTicks: number): SessionState {
       // If the bot couldn't act (no contracts, no fuel), let time pass so
       // boards refresh — advance a chunk of ticks.
       if (before === state || state.crawlerDock !== null) {
-        for (let i = 0; i < 2000 && !state.endState; i++) {
+        for (let i = 0; i < 20000 && !state.endState; i++) {
           state = advanceTick(state, world).state
         }
       }
     } else {
-      // In transit — advance in slabs
-      for (let i = 0; i < 2000 && !state.endState; i++) {
+      // In transit — advance in slabs (trips run to millions of ticks
+      // at plausible crawler speeds)
+      for (let i = 0; i < 20000 && !state.endState; i++) {
         state = advanceTick(state, world).state
         if (state.crawlerDock !== null) break
+      }
+      // Tracks chewed below a third mid-route: stop-gap repair from the
+      // carried metal — the workshop travels with the crawler.
+      const crawler = findCrawler(state.units)
+      const tracks = crawler?.components.tracks?.[0]
+      if (crawler && tracks && tracks.hp < tracks.maxHP * 0.34) {
+        const fixed = crudeRepairAll(crawler, state.company)
+        if (fixed.ok) {
+          state = {
+            ...state,
+            company: fixed.company,
+            units: state.units.map((u) => (u.id === CRAWLER_UNIT_ID ? fixed.unit : u)),
+          }
+        }
       }
       // Halted dry mid-route: do what the player does — pay for an
       // emergency resupply and keep rolling.
@@ -206,21 +264,23 @@ function playSession(seed: number, maxTicks: number): SessionState {
 }
 
 describe('full-loop playthrough (bot)', () => {
-  // ~12 hauls at ~70k ticks each — a session is won inside ~1.5M ticks
-  // (≈ 20 real minutes at 100× speed).
-  const SESSION_BUDGET = 2_000_000
+  // Trips are millions of ticks at plausible crawler speeds, so the
+  // multi-seed runs play to a reduced credit target (same loop, fewer
+  // hauls) and one run goes the full distance.
+  const SESSION_BUDGET = 120_000_000
+  const SHORT_TARGET = 12_000
 
-  it('a contract-following bot wins within a session', () => {
+  it('a contract-following bot wins a full session', () => {
     const result = playSession(2026, SESSION_BUDGET)
     expect(result.endState?.kind).toBe('victory')
-  }, 60000)
+  }, 1_200_000)
 
   it('wins across multiple seeds (balance is not seed-lucky)', () => {
     for (const seed of [1, 7, 42]) {
-      const result = playSession(seed, SESSION_BUDGET)
+      const result = playSession(seed, SESSION_BUDGET, SHORT_TARGET)
       expect(result.endState?.kind, `seed ${seed}`).toBe('victory')
     }
-  }, 120000)
+  }, 1_200_000)
 
   it('doing nothing eventually loses or stalls but never crashes', () => {
     let state = createSession(99, world)

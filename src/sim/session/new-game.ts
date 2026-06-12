@@ -13,6 +13,8 @@ import { seedMarkets } from '../economy/seed-market'
 import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
 import { buildCrawlerUnit, startingGarage } from '../combat/catalog'
+import { pickCampSite, spawnBand } from '../raiders/bands'
+import { RAIDER_BAND_TARGET, RAIDER_RESPAWN_TICKS } from '../balance'
 import { generateMechLot } from '../combat/sales'
 import { startingPilots } from '../pilots/models'
 import { generateHirePool } from '../pilots/hiring'
@@ -49,6 +51,8 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     pilots: startingPilots(),
     hirePools: {},
     mechLots: {},
+    raiderRespawnAt: RAIDER_RESPAWN_TICKS,
+    raiderSerial: 0,
     reputation: emptyReputation(),
     intel: {},
     params: {
@@ -60,9 +64,15 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     endState: null,
   }
 
+  // Seed the world's raider bands — camps weighted by banditry.
+  for (let i = 0; i < RAIDER_BAND_TARGET; i++) {
+    state.units.push(...spawnBand(i, pickCampSite(world, rng), rng))
+    state.raiderSerial = i + 1
+  }
+
   // Starting node gets an immediate board, hiring pool, and dealer lot
   // so the first dock isn't empty, and the company knows its home port.
-  state.boards[startNode] = generateBoard(startNode, world, rng, 0, markets)
+  state.boards[startNode] = generateBoard(startNode, world, rng, 0, markets, undefined, state.units)
   state.hirePools[startNode] = generateHirePool(world.nodes[startNode], rng, 0)
   state.mechLots[startNode] = generateMechLot(world.nodes[startNode], rng, 0)
   state.intel[startNode] = { observedTick: 0, market: markets[startNode] }

@@ -49,14 +49,15 @@ export function acceptContract(contractId: string): ActionResult {
   }
 
   // Hauling cargo is loaded on accept; combat contracts spawn their
-  // garrison at the site — it exists on the map from this moment.
+  // garrison at the site; a security target band already lives on the
+  // map — accepting just takes the job.
   if (contract.type === 'hauling') {
     const c = company.get()
     if (cargoUsed(c) + contract.quantity > c.cargoCapacity) {
       return { ok: false, reason: 'CARGO FULL' }
     }
     company.set({ ...c, cargo: addCargo(c.cargo, contract.commodity, contract.quantity) })
-  } else {
+  } else if (contract.type === 'combat') {
     const site = nodes.get()[contract.destination]
     if (!site) return { ok: false, reason: 'UNKNOWN SITE' }
     const rng = makeRng(rngState.get())
@@ -103,7 +104,8 @@ export function abandonContract(contractId: string): ActionResult {
   const result = simAbandon(company.get(), contract)
   company.set(result.company)
   if (contract.type === 'combat') {
-    // The garrison stands down (future: persist as world raiders).
+    // The garrison stands down. (Abandoned security targets just keep
+    // camping — they live in the world.)
     units.set(units.get().filter((u) => u.contractId !== contract.id))
   }
   activeContracts.set(activeContracts.get().filter((c) => c.id !== contractId))

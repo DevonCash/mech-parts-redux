@@ -65,8 +65,8 @@ export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>
  *
  * A move order is a waypoint path. Ground clicks issue a single open
  * waypoint; road travel issues the route polyline with mode 'road'
- * (roads are infrastructure: double ground speed, but they carry the
- * route's ambush danger — raiders watch the roads).
+ * (roads are infrastructure: double ground speed — and raider bands
+ * camp beside them, which is the map's problem to show, not a stat's).
  */
 export const UnitOrderSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('hold') }),
@@ -74,8 +74,6 @@ export const UnitOrderSchema = z.discriminatedUnion('kind', [
     kind: z.literal('move'),
     waypoints: z.array(z.tuple([z.number(), z.number()])),
     mode: z.enum(['open', 'road']),
-    /** Ambush risk while executing, baked at issue time */
-    danger: z.number(),
     /** Dock at this node on arrival (crawler) */
     dockNodeId: z.string().optional(),
   }),
@@ -101,7 +99,11 @@ export const UnitSchema = z.object({
   npcPilot: PilotSchema.optional(),
   /** Combat contract this unit belongs to (hostile garrisons) */
   contractId: z.string().optional(),
+  /** Raider band this unit rides with */
+  bandId: z.string().optional(),
   /** Leash anchor — hostiles hunt near here and return when unengaged */
   spawn: z.tuple([z.number(), z.number()]).optional(),
+  /** Hunt radius from the spawn anchor (defaults to LEASH_KM) */
+  leashKm: z.number().optional(),
 })
 export type Unit = z.infer<typeof UnitSchema>

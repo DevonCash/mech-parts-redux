@@ -12,8 +12,9 @@ import { spawnHostiles } from '../combat/strategic'
 import { unitDestroyed } from '../combat/damage'
 import { CRAWLER_UNIT_ID } from '../combat/catalog'
 import { makeRng } from '../rng'
-import { EMERGENCY_RESUPPLY_COST } from '../balance'
-import type { CombatContract } from '../contracts/models'
+import { EMERGENCY_RESUPPLY_COST, RAIDER_BAND_TARGET, RAIDER_RESPAWN_TICKS, ECON_INTERVAL } from '../balance'
+import { liveBandIds } from '../raiders/bands'
+import type { CombatContract, SecurityContract } from '../contracts/models'
 import type { SessionState } from './state'
 
 const world: WorldStatic = {
@@ -30,6 +31,35 @@ function depart(state: SessionState, targetNodeId = 'chryse-landing'): SessionSt
     crawlerDock: null,
     units: state.units.map((u) =>
       u.id === CRAWLER_UNIT_ID ? { ...u, order } : u,
+    ),
+  }
+}
+
+/**
+ * Place the crawler ~5 km out from a node with a dock-targeted move —
+ * arrival/dock/board/intel mechanics in a few thousand ticks instead
+ * of a multi-day full trip (trips are 20–40 game-hours at plausible
+ * crawler speeds; full-trip integration lives in the bot playthrough).
+ */
+function shortLegTo(state: SessionState, nodeId: string): SessionState {
+  const [lat, lng] = world.nodes[nodeId].position
+  return {
+    ...state,
+    crawlerDock: null,
+    units: state.units.map((u) =>
+      u.id === CRAWLER_UNIT_ID
+        ? {
+            ...u,
+            lat: lat - 5 / 59.2,
+            lng,
+            order: {
+              kind: 'move' as const,
+              waypoints: [[lat, lng] as [number, number]],
+              mode: 'open' as const,
+              dockNodeId: nodeId,
+            },
+          }
+        : u,
     ),
   }
 }
@@ -62,9 +92,23 @@ describe('createSession', () => {
     const s = createSession(1, world)
     expect(s.crawlerDock).toBe(START_NODE)
     expect(findCrawler(s.units)).toBeDefined()
-    expect(s.units).toHaveLength(1)
     expect(s.garage).toHaveLength(2)
     expect(s.boards[START_NODE].contracts.length).toBeGreaterThan(0)
+  })
+
+  it('seeds the world with the target number of raider bands', () => {
+    const s = createSession(1, world)
+    expect(liveBandIds(s.units).size).toBe(RAIDER_BAND_TARGET)
+    expect(s.raiderSerial).toBe(RAIDER_BAND_TARGET)
+    // The crawler is the only player unit on the map at start.
+    expect(s.units.filter((u) => u.side === 'player')).toHaveLength(1)
+    for (const u of s.units) {
+      if (u.side !== 'hostile') continue
+      expect(u.bandId).toBeDefined()
+      expect(u.spawn).toBeDefined()
+      expect(u.leashKm).toBeGreaterThan(0)
+      expect(u.npcPilot).toBeDefined()
+    }
   })
 })
 
@@ -97,17 +141,16 @@ describe('advanceTick', () => {
     expect(crawlerLater.lat).toBe(crawler.lat)
   })
 
-  it('completes a road trip: docks, emits arrival, regenerates the board', () => {
-    const s = depart(createSession(2, world))
-    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
-    const needed = travelTicks(metrics.effectiveKm) + 60
+  it('completes a leg: docks, emits arrival, regenerates the board', () => {
+    const s = shortLegTo(createSession(2, world), 'chryse-landing')
 
     let current = s
     let arrived = false
-    for (let i = 0; i < needed; i++) {
+    for (let i = 0; i < 30000; i++) {
       const r = advanceTick(current, world)
       current = r.state
       if (r.events.some((e) => e.kind === 'arrival')) arrived = true
+      if (current.crawlerDock) break
     }
     expect(arrived).toBe(true)
     expect(current.crawlerDock).toBe('chryse-landing')
@@ -281,6 +324,87 @@ describe('strategic combat through the pipeline', () => {
   })
 })
 
+describe('raider bands through the pipeline', () => {
+  /** Reduce every component on a unit to scrap. */
+  function wreckUnit(u: SessionState['units'][number]) {
+    return {
+      ...u,
+      components: Object.fromEntries(
+        Object.entries(u.components).map(([loc, stack]) => [
+          loc,
+          stack.map((c) => ({ ...c, hp: 0 })),
+        ]),
+      ),
+    }
+  }
+
+  it('respawns bands on the econ cadence back up to the target', () => {
+    let s = createSession(1, world)
+    const gone = [...liveBandIds(s.units)][0]
+    s = { ...s, units: s.units.filter((u) => u.bandId !== gone), raiderRespawnAt: 0 }
+    expect(liveBandIds(s.units).size).toBe(RAIDER_BAND_TARGET - 1)
+
+    s = runTicks(s, ECON_INTERVAL + 1)
+    expect(liveBandIds(s.units).size).toBe(RAIDER_BAND_TARGET)
+    expect(s.raiderSerial).toBe(RAIDER_BAND_TARGET + 1)
+    // The next respawn is pushed out — bands trickle back, not flood.
+    expect(s.raiderRespawnAt).toBe(ECON_INTERVAL + RAIDER_RESPAWN_TICKS)
+  })
+
+  it('a security contract completes when its band is destroyed: pay, rep, cleanup', () => {
+    let s = createSession(1, world)
+    const target = [...liveBandIds(s.units)][0]
+    const band = s.units.filter((u) => u.bandId === target)
+    const contract: SecurityContract = {
+      id: 'sec-test',
+      type: 'security',
+      origin: START_NODE,
+      destination: START_NODE,
+      bandId: target,
+      hostiles: band.length,
+      site: band[0].spawn!,
+      faction: 'settler',
+      pay: 4000,
+      postedTick: 0,
+      deadlineTick: null,
+      boardExpiryTick: 999999,
+      status: 'active',
+    }
+    s = {
+      ...s,
+      active: [contract],
+      units: s.units.map((u) => (u.bandId === target ? wreckUnit(u) : u)),
+    }
+    const credits = s.company.credits
+    const rep = s.reputation.settler
+
+    const r = advanceTick(s, world)
+    expect(r.events.some((e) => e.kind === 'contract-completed')).toBe(true)
+    expect(r.state.company.credits).toBeGreaterThanOrEqual(credits + 4000)
+    expect(r.state.reputation.settler).toBeGreaterThan(rep)
+    expect(r.state.active).toHaveLength(0)
+    expect(r.state.units.some((u) => u.bandId === target)).toBe(false)
+    expect(r.state.stats.contractsCompleted).toBe(1)
+  })
+
+  it('a docked crawler far from any camp is unmolested — no dice, only units', () => {
+    let s = createSession(1, world)
+    const before = findCrawler(s.units)!.components
+    s = runTicks(s, 2000)
+    expect(findCrawler(s.units)!.components).toEqual(before)
+  })
+
+  it('band tags survive the save round-trip', () => {
+    const s = createSession(3, world)
+    const decoded = decodeSave(encodeSave(s))!
+    expect(decoded).toEqual(s)
+    const banded = decoded.units.filter((u) => u.bandId)
+    expect(banded.length).toBeGreaterThan(0)
+    expect(banded[0].leashKm).toBeGreaterThan(0)
+    expect(banded[0].spawn).toBeDefined()
+  })
+})
+
 describe('recruitment & acquisition', () => {
   it('the home port starts with a hiring pool (settlement) and dealer lot', () => {
     const s = createSession(1, world)
@@ -290,10 +414,9 @@ describe('recruitment & acquisition', () => {
   })
 
   it('docking at a new node generates its pool and lot', () => {
-    const s = depart(createSession(2, world))
+    const s = shortLegTo(createSession(2, world), 'chryse-landing')
     expect(s.hirePools['chryse-landing']).toBeUndefined()
-    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
-    const after = runTicks(s, travelTicks(metrics.effectiveKm) + 60)
+    const after = runTicks(s, 30000)
     expect(after.crawlerDock).toBe('chryse-landing')
     expect(after.hirePools['chryse-landing']).toBeDefined()
     expect(after.mechLots['chryse-landing']).toBeDefined()
@@ -404,22 +527,19 @@ describe('intel — fog of war', () => {
   })
 
   it('arrival at a node yields fresh intel for it', () => {
-    const s = depart(createSession(1, world))
+    const s = shortLegTo(createSession(1, world), 'chryse-landing')
     expect(s.intel['chryse-landing']).toBeUndefined()
 
-    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
-    const needed = travelTicks(metrics.effectiveKm) + 120
-    const after = runTicks(s, needed)
+    const after = runTicks(s, 30000)
     expect(after.crawlerDock).toBe('chryse-landing')
     expect(after.intel['chryse-landing']).toBeDefined()
     expect(after.intel['chryse-landing'].observedTick).toBeGreaterThan(0)
   })
 
   it('an observed snapshot does not change while out of range', () => {
-    const s = depart(createSession(1, world))
-    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
-    const needed = travelTicks(metrics.effectiveKm) + 120
-    const arrived = runTicks(s, needed)
+    const s = shortLegTo(createSession(1, world), 'chryse-landing')
+    const arrived = runTicks(s, 30000)
+    expect(arrived.crawlerDock).toBe('chryse-landing')
 
     const homeSnapshot = arrived.intel[START_NODE]
     const later = runTicks(arrived, 500)

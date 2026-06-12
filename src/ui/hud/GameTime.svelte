@@ -37,6 +37,7 @@
     "--play": () => setGameSpeed(1),
     "--fast-forward": () => setGameSpeed(10),
     "--cruise": () => setGameSpeed(100),
+    "--burn": () => setGameSpeed(1000),
     "--toggle": () => setGameSpeed(currentScale === 0 ? 1 : 0),
   })}
 >
@@ -50,6 +51,7 @@
       active={currentScale === 10}
     />
     <Button commandId="game-time.cruise" iconOnly active={currentScale === 100} />
+    <Button commandId="game-time.burn" iconOnly active={currentScale === 1000} />
   </menu>
 </div>
 

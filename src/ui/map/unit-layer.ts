@@ -14,6 +14,8 @@ import { moveCrawlerTo } from '../../stores/travel'
 import { CRAWLER_UNIT_ID } from '../../sim/combat/catalog'
 import { unitDestroyed } from '../../sim/combat/damage'
 import type { Unit } from '../../sim/combat/models'
+import { SENSOR_RANGE_KM } from '../../sim/intel/models'
+import { marsDistance } from '../../sim/constants'
 
 const SOURCE_ID = 'units'
 const ORDER_SOURCE_ID = 'unit-orders'
@@ -23,6 +25,21 @@ const LABEL_LAYER = 'unit-labels'
 const ORDER_LAYER = 'unit-order-lines'
 
 type FC = { type: 'FeatureCollection'; features: any[] }
+
+/**
+ * Hostiles (and their wrecks) only exist on the map inside the
+ * crawler's sensor ring — raider camps are discovered, not given.
+ * Player units are always visible.
+ */
+function visibleUnits(all: Unit[]): Unit[] {
+  const crawler = all.find((u) => u.id === CRAWLER_UNIT_ID)
+  if (!crawler) return all.filter((u) => u.side === 'player')
+  return all.filter(
+    (u) =>
+      u.side === 'player' ||
+      marsDistance(u.lat, u.lng, crawler.lat, crawler.lng) <= SENSOR_RANGE_KM,
+  )
+}
 
 function unitsGeoJSON(all: Unit[], selected: string | null): FC {
   return {
@@ -79,7 +96,10 @@ function ordersGeoJSON(all: Unit[]): FC {
 }
 
 export function addUnitLayer(map: MaplibreMap): () => void {
-  map.addSource(SOURCE_ID, { type: 'geojson', data: unitsGeoJSON(units.get(), null) })
+  map.addSource(SOURCE_ID, {
+    type: 'geojson',
+    data: unitsGeoJSON(visibleUnits(units.get()), null),
+  })
   map.addSource(ORDER_SOURCE_ID, { type: 'geojson', data: ordersGeoJSON(units.get()) })
 
   map.addLayer({
@@ -116,11 +136,13 @@ export function addUnitLayer(map: MaplibreMap): () => void {
     type: 'circle',
     source: SOURCE_ID,
     paint: {
+      // Zoom expressions must be top-level — nesting the interpolate
+      // inside a case gets the whole layer rejected by maplibre.
       'circle-radius': [
-        'case',
-        ['get', 'dead'], 4,
-        ['get', 'crawler'], ['interpolate', ['linear'], ['zoom'], 0, 5, 5, 7, 10, 10],
-        7,
+        'interpolate', ['linear'], ['zoom'],
+        0, ['case', ['get', 'dead'], 4, ['get', 'crawler'], 5, 7],
+        5, ['case', ['get', 'dead'], 4, ['get', 'crawler'], 7, 7],
+        10, ['case', ['get', 'dead'], 4, ['get', 'crawler'], 10, 7],
       ],
       'circle-color': [
         'case',
@@ -166,7 +188,9 @@ export function addUnitLayer(map: MaplibreMap): () => void {
       const all = units.get()
       const sel = selectedUnit.get()
       const source = map.getSource(SOURCE_ID)
-      if (source && 'setData' in source) (source as any).setData(unitsGeoJSON(all, sel))
+      if (source && 'setData' in source) {
+        ;(source as any).setData(unitsGeoJSON(visibleUnits(all), sel))
+      }
       const orderSource = map.getSource(ORDER_SOURCE_ID)
       if (orderSource && 'setData' in orderSource) {
         ;(orderSource as any).setData(ordersGeoJSON(all))
@@ -203,7 +227,6 @@ export function addUnitLayer(map: MaplibreMap): () => void {
         kind: 'move',
         waypoints: [[e.lngLat.lat, e.lngLat.lng]],
         mode: 'open',
-        danger: 0,
       })
     }
   }

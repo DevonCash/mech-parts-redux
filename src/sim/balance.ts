@@ -81,20 +81,39 @@ export const COMBAT_PAY_PER_HOSTILE = 1800
 /** Chance a board slot rolls a combat contract instead of a haul */
 export const COMBAT_CONTRACT_CHANCE = 0.3
 
-// ── Route risk ──────────────────────────────────────────────────────
+// ── Raiders ─────────────────────────────────────────────────────────
+// Route danger is live: bands of technicals camp beside roads chosen
+// by banditry weight (Route.danger). The old ambush dice are gone.
 
-/** Ambush risk while moving off the road network — raiders camp roads */
-export const OFFROAD_DANGER = 0.12
+/** Live bands the world maintains (respawn keeps pressure on) */
+export const RAIDER_BAND_TARGET = 5
 
-/** Per-tick ambush probability per unit of route danger while in transit */
-export const AMBUSH_RATE_PER_TICK = 8e-6
+/** Technicals per band */
+export const RAIDER_BAND_SIZE_MIN = 2
+export const RAIDER_BAND_SIZE_MAX = 3
 
-/** Fraction of carried cargo lost in an ambush (rolled within range) */
-export const AMBUSH_CARGO_LOSS_MIN = 0.05
-export const AMBUSH_CARGO_LOSS_MAX = 0.2
+/** Chance a band also has a scavenged mech guarding the camp */
+export const CAMP_MECH_CHANCE = 0.4
 
-/** Credits lost in an ambush when there is no cargo to take */
-export const AMBUSH_CREDIT_LOSS_MAX = 300
+/** Ticks between band respawns when under target (~1.7 game-hours) */
+export const RAIDER_RESPAWN_TICKS = 60000
+
+/** Interception radius — technicals chase anything this close to camp */
+export const TECHNICAL_LEASH_KM = 10
+
+/** The camp guard mech stays home */
+export const CAMP_MECH_LEASH_KM = 6
+
+// ── Security contracts ──────────────────────────────────────────────
+
+/** Flat component of a patrol contract */
+export const SECURITY_PAY_BASE = 800
+
+/** Pay per raider unit in the target band */
+export const SECURITY_PAY_PER_RAIDER = 1200
+
+/** Bands within this of a node (or its roads) appear on its board */
+export const SECURITY_OFFER_RANGE_KM = 60
 
 // ── Recruitment & acquisition ───────────────────────────────────────
 

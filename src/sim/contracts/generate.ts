@@ -18,6 +18,9 @@ import {
   HARD_DEADLINE_BONUS,
   HAUL_PAY_BASE,
   HAUL_PAY_PER_KM,
+  SECURITY_OFFER_RANGE_KM,
+  SECURITY_PAY_BASE,
+  SECURITY_PAY_PER_RAIDER,
 } from '../balance'
 import { CRAWLER_SPEED_KM_S } from '../crawler/movement'
 import {
@@ -33,7 +36,9 @@ import {
   payModifier,
   type Reputation,
 } from '../factions/models'
+import { bandsNearNode, routeLiveDanger } from '../raiders/bands'
 import { findPath } from '../h3/graph'
+import type { Unit } from '../combat/models'
 import { TICK_DURATION_MS } from '../tick'
 import type { Rng } from '../rng'
 import type { Board, Contract } from './models'
@@ -51,6 +56,7 @@ export function routeMetrics(
   world: WorldStatic,
   fromId: string,
   toId: string,
+  units: Unit[] = [],
 ): { effectiveKm: number; meanDanger: number } | null {
   const positions: Record<string, [number, number]> = {}
   for (const n of Object.values(world.nodes)) positions[n.id] = n.position
@@ -63,7 +69,8 @@ export function routeMetrics(
   for (const seg of segments) {
     const route = world.routes[seg.routeId]
     effectiveKm += route.distance * route.terrain
-    dangerSum += route.danger
+    // Live danger: how raider-camped the road actually is right now.
+    dangerSum += routeLiveDanger(route, units)
   }
   return { effectiveKm, meanDanger: dangerSum / segments.length }
 }
@@ -87,6 +94,7 @@ export function generateBoard(
   currentTick: number,
   markets?: Record<string, NodeMarket>,
   reputation?: Reputation,
+  units: Unit[] = [],
 ): Board {
   const origin = world.nodes[nodeId]
   const contracts: Contract[] = []
@@ -95,6 +103,29 @@ export function generateBoard(
   const faction = nodeFaction(origin)
   const repPay = reputation ? payModifier(reputation, faction) : 1
 
+  // Patrol work: bands camped near this node's roads are a problem the
+  // locals will pay to remove (one offer per nearby band).
+  for (const band of bandsNearNode(world, nodeId, units, SECURITY_OFFER_RANGE_KM)) {
+    const pay = Math.round(
+      (SECURITY_PAY_BASE + band.size * SECURITY_PAY_PER_RAIDER) * repPay * rng.range(0.9, 1.15),
+    )
+    contracts.push({
+      id: `${nodeId}-${currentTick}-sec-${band.bandId}`,
+      type: 'security',
+      origin: nodeId,
+      destination: nodeId,
+      bandId: band.bandId,
+      hostiles: band.size,
+      site: band.camp,
+      faction,
+      pay,
+      postedTick: currentTick,
+      deadlineTick: currentTick + 800000, // generous — bands don't move
+      boardExpiryTick: currentTick + CONTRACT_BOARD_TTL,
+      status: 'available',
+    })
+  }
+
   const otherNodes = Object.values(world.nodes)
     .filter((n) => n.id !== nodeId)
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -102,7 +133,7 @@ export function generateBoard(
   const count = rng.int(2, 5)
   for (let i = 0; i < count; i++) {
     const destination = rng.pick(otherNodes)
-    const metrics = routeMetrics(world, nodeId, destination.id)
+    const metrics = routeMetrics(world, nodeId, destination.id, units)
     if (!metrics) continue
 
     // Combat work: clear raiders at the destination node. Best-paid
