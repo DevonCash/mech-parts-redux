@@ -1,22 +1,54 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import GameTime from "./ui/hud/GameTime.svelte";
+  import CompanyStatus from "./ui/hud/CompanyStatus.svelte";
+  import EventFeed from "./ui/hud/EventFeed.svelte";
+  import StrandedBanner from "./ui/hud/StrandedBanner.svelte";
   import PauseMenu from "./ui/menu/PauseMenu.svelte";
+  import GameOver from "./ui/menu/GameOver.svelte";
   import MarsMap from "./ui/map/MarsMap.svelte";
   import NodeInfo from "./ui/panels/NodeInfo.svelte";
+  import ContractBoard from "./ui/panels/ContractBoard.svelte";
+  import Market from "./ui/panels/Market.svelte";
+  import ActiveContracts from "./ui/panels/ActiveContracts.svelte";
 
   import { handleKeydown } from "./keybinds";
-  import { createStepper, TICK_DURATION_MS } from "./sim/tick";
-  import { gameTime, tick, timeScale, alpha } from "./stores/time";
-  import { crawler } from "./stores/crawler";
-  import { routes } from "./stores/world";
-  import { advanceCrawler } from "./sim/crawler/movement";
+  import { createStepper } from "./sim/tick";
+  import { timeScale, alpha } from "./stores/time";
+  import { advanceTick } from "./sim/session/pipeline";
+  import type { GameEvent } from "./sim/session/state";
+  import {
+    applySessionState,
+    gatherSessionState,
+    getWorld,
+    endState,
+  } from "./stores/session";
+  import { pushEvents } from "./stores/events";
+  import { saveGame } from "./stores/save";
+  import { openPanel, type DockPanel } from "./stores/ui";
+
+  let { onNewGame, onExit }: { onNewGame: () => void; onExit: () => void } =
+    $props();
 
   const stepper = createStepper();
+  const AUTOSAVE_INTERVAL_MS = 15000;
   let rafId: number;
+  let lastAutosave = performance.now();
+
+  let panel = $state<DockPanel>(openPanel.get());
+  let ended = $state(endState.get());
+
+  $effect(() => {
+    const unsubs = [
+      openPanel.subscribe((v) => (panel = v)),
+      endState.subscribe((v) => (ended = v)),
+    ];
+    return () => unsubs.forEach((u) => u());
+  });
 
   onMount(() => {
     let lastTime = performance.now();
+    const world = getWorld();
 
     function frame(now: number) {
       const realDelta = now - lastTime;
@@ -24,21 +56,27 @@
 
       const result = stepper.step(realDelta, timeScale.get());
 
-      if (result.ticks > 0) {
-        const currentTick = tick.get();
-        const currentGameTime = gameTime.get();
+      if (result.ticks > 0 && !endState.get()) {
+        let session = gatherSessionState();
+        const events: GameEvent[] = [];
 
-        // Advance tick counter and game time
-        tick.set(currentTick + result.ticks);
-        gameTime.set(currentGameTime + result.ticks * TICK_DURATION_MS);
-
-        // Run simulation ticks
-        const currentRoutes = routes.get();
-        let crawlerState = crawler.get();
         for (let i = 0; i < result.ticks; i++) {
-          crawlerState = advanceCrawler(crawlerState, currentRoutes);
+          const r = advanceTick(session, world);
+          session = r.state;
+          if (r.events.length > 0) events.push(...r.events);
+          if (session.endState) break;
         }
-        crawler.set(crawlerState);
+
+        applySessionState(session);
+        if (events.length > 0) pushEvents(events);
+
+        // Autosave at tick-batch boundaries only — never mid-batch.
+        if (session.endState) {
+          saveGame();
+        } else if (now - lastAutosave > AUTOSAVE_INTERVAL_MS) {
+          saveGame();
+          lastAutosave = now;
+        }
       }
 
       alpha.set(result.alpha);
@@ -58,28 +96,29 @@
 
 <div class="game-shell">
   <header>
-    <PauseMenu />
-    <div class="resources">
-      <span>
-        <label aria-label="Credits" title="Credits" for="money">¤</label>
-        <output id="money">{"0".padStart(6, "0")}</output>
-      </span>
-      <span>
-        <label aria-label="Parts" title="Parts" for="parts">⚙</label>
-        <output id="parts">0</output>
-      </span>
-      <span>
-        <label aria-label="Fuel" title="Fuel" for="fuel">⏣</label>
-        <output id="fuel">0</output>
-      </span>
-    </div>
+    <PauseMenu {onExit} />
+    <CompanyStatus />
     <GameTime />
   </header>
 
   <main class="map-viewport">
     <MarsMap />
     <NodeInfo />
+    <ActiveContracts />
+
+    {#if panel === "contracts"}
+      <div class="dock-panel"><ContractBoard /></div>
+    {:else if panel === "market"}
+      <div class="dock-panel"><Market /></div>
+    {/if}
+
+    <StrandedBanner />
+    <EventFeed />
   </main>
+
+  {#if ended}
+    <GameOver {onNewGame} />
+  {/if}
 </div>
 
 <style>
@@ -95,53 +134,11 @@
     position: relative;
   }
 
-  .resources {
-    display: flex;
-    gap: 3px;
-  }
-
-  .resources span {
-    display: flex;
-    align-items: center;
-    background: black;
-    color: white;
-    border: 2px solid black;
-  }
-
-  .resources label {
-    height: 1.5rem;
-    width: 1.5rem;
-    font-size: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .resources output {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    background: white;
-    color: black;
-    width: 5ch;
-    height: 100%;
-    padding: 0 0.5ch;
-  }
-
-  .resources output::before {
-    left: 0;
-    position: absolute;
-    width: 100%;
-    content: "00000";
-    opacity: 0.1;
-    margin: 0 0.5ch;
-  }
-
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 1rem;
     padding: 0.5rem;
     position: relative;
     z-index: 1;
@@ -151,5 +148,12 @@
     position: absolute;
     inset: 0;
     z-index: 0;
+  }
+
+  .dock-panel {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    z-index: 20;
   }
 </style>

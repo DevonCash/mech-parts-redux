@@ -83,10 +83,13 @@ export function seedMarket(node: GameNode, rng: Rng): NodeMarket {
     inventory[c] = stock
   }
 
-  // Fuel is sold nearly everywhere — guarantee a working minimum so the
-  // player is never hard-locked out of refueling at a dock.
-  inventory.fuel = Math.max(inventory.fuel, 400)
-  baseInventory.fuel = Math.max(baseInventory.fuel, 400)
+  // Fuel stock works at crawler scale (full refuels run to thousands of
+  // units), unlike trade goods. Every node keeps a working reserve so
+  // the player is never hard-locked out of refueling at a dock;
+  // producers keep bulk depots.
+  const fuelFloor = profile.produces.includes('fuel') ? 8000 : 3000
+  inventory.fuel = fuelFloor
+  baseInventory.fuel = fuelFloor
 
   return { nodeId: node.id, inventory, prices, basePrices, baseInventory }
 }

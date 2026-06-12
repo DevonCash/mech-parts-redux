@@ -38,7 +38,7 @@ export const COMMODITY_VALUES: Record<Commodity, number> = {
   ore: 8,
   ice: 6,
   metal: 25,
-  fuel: 1.5,
+  fuel: 1.0,
   water: 4,
   food: 12,
   electronics: 80,

@@ -1,4 +1,4 @@
-import { persistentAtom } from '@nanostores/persistent'
+import { atom } from 'nanostores'
 
 export interface CrawlerState {
   /** Current latitude on Mars */
@@ -30,7 +30,7 @@ const defaultCrawler: CrawlerState = {
   routeQueue: [],
 }
 
-export const crawler = persistentAtom<CrawlerState>('mech:crawler', defaultCrawler, {
-  encode: JSON.stringify,
-  decode: JSON.parse,
-})
+// Plain atom: writing localStorage every tick is a perf hazard, and
+// partial persistence desyncs from the rest of the session. Persistence
+// goes through the save system (stores/save.ts) at tick boundaries.
+export const crawler = atom<CrawlerState>(defaultCrawler)

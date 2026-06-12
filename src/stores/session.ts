@@ -1,0 +1,74 @@
+/**
+ * Session bookkeeping + the bridge between split UI atoms and the
+ * sim's SessionState. The pipeline operates on a gathered SessionState;
+ * the result is fanned back out so panels subscribe to small atoms.
+ */
+import { atom } from 'nanostores'
+import { CREDIT_TARGET, START_CREDITS } from '../sim/balance'
+import type {
+  EndState,
+  SessionParams,
+  SessionState,
+} from '../sim/session/state'
+import { createSession } from '../sim/session/new-game'
+import type { WorldStatic } from '../sim/contracts/generate'
+import { TICK_DURATION_MS } from '../sim/tick'
+import { crawler } from './crawler'
+import { company } from './company'
+import { markets } from './market'
+import { activeContracts, boards } from './contracts'
+import { gameTime, tick } from './time'
+import { nodes, routes } from './world'
+import { sessionStats } from './session-stats'
+
+export { sessionStats }
+
+export const sessionParams = atom<SessionParams>({
+  seed: 0,
+  startCredits: START_CREDITS,
+  creditTarget: CREDIT_TARGET,
+})
+
+export const endState = atom<EndState | null>(null)
+
+export const rngState = atom<number>(0)
+
+export function getWorld(): WorldStatic {
+  return { nodes: nodes.get(), routes: routes.get() }
+}
+
+/** Assemble the sim's SessionState from the UI atoms. */
+export function gatherSessionState(): SessionState {
+  return {
+    tick: tick.get(),
+    rngState: rngState.get(),
+    crawler: crawler.get(),
+    company: company.get(),
+    markets: markets.get(),
+    boards: boards.get(),
+    active: activeContracts.get(),
+    params: sessionParams.get(),
+    stats: sessionStats.get(),
+    endState: endState.get(),
+  }
+}
+
+/** Fan a SessionState back out to the UI atoms. */
+export function applySessionState(state: SessionState): void {
+  tick.set(state.tick)
+  gameTime.set(state.tick * TICK_DURATION_MS)
+  rngState.set(state.rngState)
+  crawler.set(state.crawler)
+  company.set(state.company)
+  markets.set(state.markets)
+  boards.set(state.boards)
+  activeContracts.set(state.active)
+  sessionParams.set(state.params)
+  sessionStats.set(state.stats)
+  endState.set(state.endState)
+}
+
+/** Start a brand-new run from a seed. */
+export function startNewSession(seed: number): void {
+  applySessionState(createSession(seed, getWorld()))
+}

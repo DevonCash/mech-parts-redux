@@ -10,13 +10,14 @@
 export const START_CREDITS = 2000
 
 /** Credits required to pay off the company debt and win */
-export const CREDIT_TARGET = 20000
+export const CREDIT_TARGET = 50000
 
 /** Fuel the crawler starts with */
-export const START_FUEL = 2000
+export const START_FUEL = 3000
 
-/** Crawler fuel tank capacity */
-export const FUEL_CAPACITY = 3000
+/** Crawler fuel tank capacity — covers a mid-length haul; the longest
+ *  routes (~5000+ effective km) require a refuel stop along the way */
+export const FUEL_CAPACITY = 5000
 
 /** Crawler cargo capacity in commodity units */
 export const CARGO_CAPACITY = 60
@@ -60,8 +61,9 @@ export const CONTRACT_BOARD_TTL = 45000
 /** Flat component of hauling pay */
 export const HAUL_PAY_BASE = 300
 
-/** Pay per effective km of the delivery route */
-export const HAUL_PAY_PER_KM = 1.6
+/** Pay per effective km of the delivery route. Fuel costs ~1¤/km, so
+ *  this sets the gross margin on distance */
+export const HAUL_PAY_PER_KM = 1.2
 
 /** Extra pay multiplier for hard-deadline contracts */
 export const HARD_DEADLINE_BONUS = 1.35

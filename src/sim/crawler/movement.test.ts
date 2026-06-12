@@ -14,6 +14,7 @@ function makeRoute(overrides: Partial<Route> = {}): Route {
     path: [[0, 0], [10, 10]],
     distance: 100,
     terrain: 0.5,
+    danger: 0.2,
     ...overrides,
   }
 }

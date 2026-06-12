@@ -18,8 +18,12 @@ export const commandMeta: Record<string, { label: string; symbol: string }> = {
     symbol: "▶",
   },
   "game-time.fast-forward": {
-    label: "Fast Forward",
+    label: "Fast Forward (10x)",
     symbol: "⏩︎",
+  },
+  "game-time.cruise": {
+    label: "Cruise (100x)",
+    symbol: "⏭",
   },
   "pause-menu.resume": {
     label: "Resume Game",

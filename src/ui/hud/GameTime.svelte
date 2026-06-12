@@ -35,7 +35,8 @@
   {@attach registerCommands({
     "--pause": () => setGameSpeed(0),
     "--play": () => setGameSpeed(1),
-    "--fast-forward": () => setGameSpeed(2),
+    "--fast-forward": () => setGameSpeed(10),
+    "--cruise": () => setGameSpeed(100),
     "--toggle": () => setGameSpeed(currentScale === 0 ? 1 : 0),
   })}
 >
@@ -46,8 +47,9 @@
     <Button
       commandId="game-time.fast-forward"
       iconOnly
-      active={currentScale === 2}
+      active={currentScale === 10}
     />
+    <Button commandId="game-time.cruise" iconOnly active={currentScale === 100} />
   </menu>
 </div>
 

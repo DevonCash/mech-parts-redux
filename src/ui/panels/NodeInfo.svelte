@@ -3,6 +3,7 @@
   import { nodes, routes } from "../../stores/world";
   import { crawler } from "../../stores/crawler";
   import { travelTo, cancelTravel } from "../../stores/travel";
+  import { togglePanel } from "../../stores/ui";
   import { CRAWLER_SPEED_KM_S } from "../../sim/crawler/movement";
   import type { GameNode } from "../../sim/economy/models";
 
@@ -118,6 +119,10 @@
 
     {#if isDockedHere}
       <div class="status docked">DOCKED</div>
+      <div class="dock-actions">
+        <button class="action dock" onclick={() => togglePanel("contracts")}>CONTRACTS</button>
+        <button class="action dock" onclick={() => togglePanel("market")}>TRADE</button>
+      </div>
     {/if}
 
     {#if isDestination && isTraveling}
@@ -279,5 +284,23 @@
   }
   .cancel:hover {
     background: rgba(255, 80, 80, 0.25);
+  }
+
+  .dock-actions {
+    display: flex;
+  }
+
+  .dock {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.8);
+    letter-spacing: 1px;
+    font-size: 10px;
+  }
+  .dock:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+  }
+  .dock + .dock {
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
   }
 </style>

@@ -25,7 +25,7 @@ import { boardStale, generateBoard, type WorldStatic } from '../contracts/genera
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
 import { makeRng } from '../rng'
 import { checkEndConditions } from './end-conditions'
-import type { GameEvent, SessionState } from './state'
+import type { EndState, GameEvent, SessionState } from './state'
 
 /** Effective km the crawler covers in one tick at full speed. */
 const EFFECTIVE_KM_PER_TICK = CRAWLER_SPEED_KM_S * (TICK_DURATION_MS / 1000)
@@ -133,7 +133,7 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   }
 
   // ── End conditions ────────────────────────────────────────────────
-  let endState = state.endState
+  let endState: EndState | null = state.endState
   const cheapCheck =
     company.credits >= state.params.creditTarget ||
     (crawler.currentRoute !== null && company.fuel <= 0)
