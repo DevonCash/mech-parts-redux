@@ -10,13 +10,17 @@ import { atom } from 'nanostores'
 import type { Unit, UnitOrder } from '../sim/combat/models'
 import {
   buildCrawlerUnit,
+  buildUnit,
   CRAWLER_UNIT_ID,
   startingGarage,
 } from '../sim/combat/catalog'
+import type { MechLots } from '../sim/combat/sales'
 import { unitDestroyed } from '../sim/combat/damage'
 import { crudeRepairAll, precisionRepairAll } from '../sim/combat/repair'
 import { marsDistance } from '../sim/constants'
+import { round2 } from '../sim/economy/seed-market'
 import { company } from './company'
+import { tick } from './time'
 
 export const units = atom<Unit[]>([buildCrawlerUnit(0, 0)])
 
@@ -52,11 +56,12 @@ export function setUnitOrder(unitId: string, order: UnitOrder): ActionResult {
   return { ok: true }
 }
 
-/** Field a garaged mech beside the crawler. */
+/** Field a garaged mech beside the crawler. Cockpits need pilots. */
 export function deploy(mechId: string): ActionResult {
   const stored = garage.get().find((u) => u.id === mechId)
   if (!stored) return { ok: false, reason: 'NOT IN GARAGE' }
   if (unitDestroyed(stored)) return { ok: false, reason: 'UNIT DOWN' }
+  if (!stored.pilotId) return { ok: false, reason: 'NO PILOT ASSIGNED' }
   const crawler = crawlerUnit()
   if (!crawler) return { ok: false, reason: 'NO CRAWLER' }
 
@@ -89,6 +94,51 @@ export function recall(mechId: string): ActionResult {
   units.set(units.get().filter((u) => u.id !== mechId))
   garage.set([...garage.get(), { ...fielded, order: { kind: 'hold' }, cooldowns: {} }])
   if (selectedUnit.get() === mechId) selectedUnit.set(null)
+  return { ok: true }
+}
+
+// ── Acquisition ─────────────────────────────────────────────────────
+
+/** Mechs for sale per node — written back from the pipeline. */
+export const mechLots = atom<MechLots>({})
+
+/** Buy a frame off the docked node's lot into the garage (no pilot). */
+export function buyMech(offerIndex: number): ActionResult {
+  const nodeId = crawlerDock.get()
+  if (!nodeId) return { ok: false, reason: 'NOT DOCKED' }
+  const lot = mechLots.get()[nodeId]
+  const offer = lot?.offers[offerIndex]
+  if (!offer) return { ok: false, reason: 'OFFER NOT FOUND' }
+
+  const c = company.get()
+  if (c.credits < offer.price) return { ok: false, reason: 'INSUFFICIENT CREDITS' }
+
+  const id = `mech-${nodeId}-${tick.get()}-${offerIndex}`
+  company.set({ ...c, credits: round2(c.credits - offer.price) })
+  garage.set([
+    ...garage.get(),
+    buildUnit(id, `${offer.chassisId.toUpperCase()}-${garage.get().length + 1}`, offer.chassisId, 'player', 0, 0),
+  ])
+  mechLots.set({
+    ...mechLots.get(),
+    [nodeId]: { ...lot!, offers: lot!.offers.filter((_, i) => i !== offerIndex) },
+  })
+  return { ok: true }
+}
+
+/** Assign (or clear) a pilot on a garaged mech. Steals from others. */
+export function assignPilot(mechId: string, pilotId: string | null): ActionResult {
+  const stored = garage.get().find((u) => u.id === mechId)
+  if (!stored) return { ok: false, reason: 'MECH MUST BE GARAGED' }
+
+  garage.set(
+    garage.get().map((u) => {
+      if (u.id === mechId) return { ...u, pilotId: pilotId ?? undefined }
+      // One body, one cockpit.
+      if (pilotId && u.pilotId === pilotId) return { ...u, pilotId: undefined }
+      return u
+    }),
+  )
   return { ok: true }
 }
 

@@ -10,6 +10,8 @@ import type { NodeMarket, Quantum } from '../economy/models'
 import type { Board, Contract } from '../contracts/models'
 import type { Unit } from '../combat/models'
 import type { Pilot } from '../pilots/models'
+import type { HirePools } from '../pilots/hiring'
+import type { MechLots } from '../combat/sales'
 import type { Reputation } from '../factions/models'
 import type { IntelMap } from '../intel/models'
 
@@ -51,6 +53,10 @@ export interface SessionState {
   quanta: Quantum[]
   /** The company's pilot roster */
   pilots: Pilot[]
+  /** Pilots for hire per node */
+  hirePools: HirePools
+  /** Mechs for sale per node */
+  mechLots: MechLots
   /** Standing with each faction, −1..1 */
   reputation: Reputation
   /** What the player has observed of each node, by node id */
@@ -70,6 +76,7 @@ export type GameEventKind =
   | 'unit-destroyed'
   | 'combat-contact'
   | 'pilot-kia'
+  | 'salvage-recovered'
   | 'victory'
   | 'stranded'
   | 'bankrupt'

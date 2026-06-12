@@ -1,16 +1,20 @@
 <script lang="ts">
   import {
+    assignPilot,
+    buyMech,
     crawlerDock,
     crudeRepair,
     deploy,
     garage,
+    mechLots,
     precisionRepair,
     recall,
     selectedUnit,
     units,
     RECALL_RANGE_KM,
   } from "../../stores/units";
-  import { pilots } from "../../stores/pilots";
+  import { dismissPilot, hirePilot, hirePools, pilots } from "../../stores/pilots";
+  import { hireCost } from "../../sim/pilots/hiring";
   import { company } from "../../stores/company";
   import { openPanel } from "../../stores/ui";
   import { CHASSIS, CRAWLER_UNIT_ID } from "../../sim/combat/catalog";
@@ -25,6 +29,8 @@
   let pilotRoster = $state<readonly Pilot[]>(pilots.get());
   let companyState = $state(company.get());
   let dock = $state(crawlerDock.get());
+  let pools = $state(hirePools.get());
+  let lots = $state(mechLots.get());
   let lastError = $state<string | null>(null);
 
   $effect(() => {
@@ -34,9 +40,37 @@
       pilots.subscribe((v) => (pilotRoster = v)),
       company.subscribe((v) => (companyState = v)),
       crawlerDock.subscribe((v) => (dock = v)),
+      hirePools.subscribe((v) => (pools = v)),
+      mechLots.subscribe((v) => (lots = v)),
     ];
     return () => unsubs.forEach((u) => u());
   });
+
+  let candidates = $derived(dock ? (pools[dock]?.pilots ?? []) : []);
+  let offers = $derived(dock ? (lots[dock]?.offers ?? []) : []);
+
+  // Pilots not assigned to any mech (garaged or fielded)
+  let reserve = $derived(
+    pilotRoster.filter(
+      (p) =>
+        !stored.some((u) => u.pilotId === p.id) &&
+        !allUnits.some((u) => u.side === "player" && u.pilotId === p.id),
+    ),
+  );
+
+  function assignablePilots(unit: Unit): Pilot[] {
+    return pilotRoster.filter(
+      (p) =>
+        p.id === unit.pilotId ||
+        (!stored.some((u) => u.id !== unit.id && u.pilotId === p.id) &&
+          !allUnits.some((u) => u.side === "player" && u.pilotId === p.id)),
+    );
+  }
+
+  function handleAssign(mechId: string, event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    act(assignPilot(mechId, value === "" ? null : value));
+  }
 
   let crawler = $derived(allUnits.find((u) => u.id === CRAWLER_UNIT_ID));
   let fielded = $derived(
@@ -99,23 +133,36 @@
                 style="width: {frac * 100}%"
               ></span></span>
           </div>
-          {#if pilotOf(unit)}
-            {@const pilot = pilotOf(unit)!}
-            <div class="row pilot-row">
-              <span class="pilot">{pilot.name}</span>
-              <span class="skills">
-                FID {Math.round(pilot.fidelity * 100)} · JDG {Math.round(pilot.judgment * 100)}
-              </span>
+          <div class="row pilot-row">
+            <select class="pilot-select" onchange={(e) => handleAssign(unit.id, e)}>
+              <option value="" selected={!unit.pilotId}>— NO PILOT —</option>
+              {#each assignablePilots(unit) as p (p.id)}
+                <option value={p.id} selected={unit.pilotId === p.id}>
+                  {p.name} (F{Math.round(p.fidelity * 100)}/J{Math.round(p.judgment * 100)})
+                </option>
+              {/each}
+            </select>
+            {#if pilotOf(unit)}
+              {@const pilot = pilotOf(unit)!}
               <span class="bar small"><span
                   class="fill stress-fill"
                   class:warn={pilot.stress > 0.4}
                   class:bad={pilot.stress > 0.7}
                   style="width: {pilot.stress * 100}%"
                 ></span></span>
-            </div>
-          {/if}
+            {:else}
+              <span class="no-pilot">NO PILOT</span>
+            {/if}
+          </div>
           <div class="row actions-row">
-            <button class="deploy" onclick={() => act(deploy(unit.id))}>DEPLOY</button>
+            <button
+              class="deploy"
+              disabled={!unit.pilotId || unitDestroyed(unit)}
+              title={unitDestroyed(unit) ? "WRECKED — REPAIR FIRST" : !unit.pilotId ? "ASSIGN A PILOT" : ""}
+              onclick={() => act(deploy(unit.id))}
+            >
+              {unitDestroyed(unit) ? "WRECKED" : "DEPLOY"}
+            </button>
             {#if quote.damagedComponents > 0}
               <button class="crude" onclick={() => act(crudeRepair(unit.id))}>
                 CRUDE — {quote.crudeMetal} METAL
@@ -162,6 +209,65 @@
         </li>
       {/each}
     </ul>
+  {/if}
+
+  {#if reserve.length > 0}
+    <div class="section">RESERVE</div>
+    <ul>
+      {#each reserve as p (p.id)}
+        <li>
+          <div class="row">
+            <span class="pilot">{p.name}</span>
+            <span class="skills">
+              FID {Math.round(p.fidelity * 100)} · JDG {Math.round(p.judgment * 100)}
+            </span>
+            <button class="dismiss" onclick={() => act(dismissPilot(p.id))}>DISMISS</button>
+          </div>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  {#if dock}
+    <div class="section">HIRING — LOCAL CANDIDATES</div>
+    {#if candidates.length === 0}
+      <div class="empty">NOBODY LOOKING FOR COCKPIT WORK</div>
+    {:else}
+      <ul>
+        {#each candidates as p (p.id)}
+          <li>
+            <div class="row">
+              <span class="pilot">{p.name}</span>
+              <span class="skills">
+                FID {Math.round(p.fidelity * 100)} · JDG {Math.round(p.judgment * 100)} · AGG {Math.round(p.aggression * 100)}
+              </span>
+              <button class="hire" onclick={() => act(hirePilot(p.id))}>
+                HIRE ¤{hireCost(p).toLocaleString("en-US")}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <div class="section">MECH DEALER</div>
+    {#if offers.length === 0}
+      <div class="empty">NOTHING ON THE LOT</div>
+    {:else}
+      <ul>
+        {#each offers as offer, i (i)}
+          <li>
+            <div class="row">
+              <span class="name">{CHASSIS[offer.chassisId].name.toUpperCase()}</span>
+              <span class="chassis"></span>
+              <button class="hire" onclick={() => act(buyMech(i))}>
+                BUY ¤{offer.price.toLocaleString("en-US")}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 
   <div class="note">
@@ -306,6 +412,40 @@
     height: 4px;
   }
 
+  .pilot-select {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    font-family: monospace;
+    font-size: 9px;
+    padding: 1px 2px;
+  }
+
+  .no-pilot {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: #d0c040;
+  }
+
+  .hire {
+    background: rgba(0, 255, 136, 0.12);
+    color: #00ff88;
+  }
+  .hire:hover:not(:disabled) {
+    background: rgba(0, 255, 136, 0.25);
+    color: #00ff88;
+  }
+
+  .dismiss {
+    background: rgba(255, 80, 80, 0.1);
+    color: rgba(255, 80, 80, 0.6);
+  }
+  .dismiss:hover {
+    background: rgba(255, 80, 80, 0.25);
+    color: #ff5050;
+  }
+
   .stress-fill {
     background: rgba(255, 255, 255, 0.35);
   }
@@ -321,7 +461,9 @@
     gap: 4px;
   }
 
-  .actions-row button {
+  .actions-row button,
+  .hire,
+  .dismiss {
     border: none;
     font-family: monospace;
     font-size: 9px;

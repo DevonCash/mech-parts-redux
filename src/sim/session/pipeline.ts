@@ -17,6 +17,7 @@ import {
   AMBUSH_RATE_PER_TICK,
   ECON_INTERVAL,
   FUEL_PER_EFFECTIVE_KM,
+  SALVAGE_MECH_CHANCE,
 } from '../balance'
 import { TICK_DURATION_MS } from '../tick'
 import { econStep } from '../economy/production'
@@ -24,7 +25,9 @@ import { moveQuanta, quantaDecisions } from '../economy/quanta'
 import type { Commodity } from '../economy/models'
 import { boardStale, generateBoard, type WorldStatic } from '../contracts/generate'
 import { pruneBoard, updateActiveContracts } from '../contracts/update'
-import { CRAWLER_UNIT_ID } from '../combat/catalog'
+import { CHASSIS, CRAWLER_UNIT_ID } from '../combat/catalog'
+import { generateMechLot, mechLotStale } from '../combat/sales'
+import { generateHirePool, hirePoolStale } from '../pilots/hiring'
 import { unitDestroyed } from '../combat/damage'
 import { advanceUnits, rollSalvage, LEASH_KM } from '../combat/strategic'
 import {
@@ -85,6 +88,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   let crawlerDock = state.crawlerDock
   let quanta = state.quanta
   let pilots = state.pilots
+  let hirePools = state.hirePools
+  let mechLots = state.mechLots
   let reputation = state.reputation
   let intel = state.intel
   let stats = state.stats
@@ -161,7 +166,32 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     if (tagged.length === 0) continue // never spawned (shouldn't happen)
     if (tagged.some((u) => !unitDestroyed(u))) continue
 
-    const salvage = rollSalvage(tagged, rng)
+    // One wreck is sometimes towable — it joins the garage as-is,
+    // dead components and all, needing real repairs before it fights.
+    let wrecks = tagged
+    if (rng.next() < SALVAGE_MECH_CHANCE && tagged.length > 0) {
+      const prize = tagged[0]
+      const recovered: Unit = {
+        ...prize,
+        id: `salv-${contract.id}`,
+        name: `SALVAGE ${CHASSIS[prize.chassisId]?.name.split(' ').pop()?.toUpperCase() ?? 'FRAME'}`,
+        side: 'player',
+        order: { kind: 'hold' },
+        cooldowns: {},
+        contractId: undefined,
+        npcPilot: undefined,
+        spawn: undefined,
+      }
+      garage = [...garage, recovered]
+      wrecks = tagged.slice(1)
+      events.push({
+        tick,
+        kind: 'salvage-recovered',
+        message: `WRECK RECOVERED — ${recovered.name} TOWED TO GARAGE`,
+      })
+    }
+
+    const salvage = rollSalvage(wrecks, rng)
     let cargo = company.cargo
     const space = company.cargoCapacity - cargoUsed(company)
     const metal = Math.min(salvage.metal, space)
@@ -235,11 +265,18 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
     }
   }
 
-  // ── Boards: refresh where docked ──────────────────────────────────
+  // ── Boards, hiring pools, dealer lots: refresh where docked ──────
   if (crawlerDock !== null && boardStale(boards[crawlerDock], tick)) {
     boards = {
       ...boards,
       [crawlerDock]: generateBoard(crawlerDock, world, rng, tick, markets, reputation),
+    }
+  }
+  if (crawlerDock !== null && hirePoolStale(hirePools[crawlerDock], tick)) {
+    const node = world.nodes[crawlerDock]
+    if (node) {
+      hirePools = { ...hirePools, [crawlerDock]: generateHirePool(node, rng, tick) }
+      mechLots = { ...mechLots, [crawlerDock]: generateMechLot(node, rng, tick) }
     }
   }
 
@@ -336,6 +373,8 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
       crawlerDock,
       quanta,
       pilots,
+      hirePools,
+      mechLots,
       reputation,
       intel,
       stats,

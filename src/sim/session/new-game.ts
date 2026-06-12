@@ -13,7 +13,9 @@ import { seedMarkets } from '../economy/seed-market'
 import { seedQuanta } from '../economy/quanta'
 import { generateBoard, type WorldStatic } from '../contracts/generate'
 import { buildCrawlerUnit, startingGarage } from '../combat/catalog'
+import { generateMechLot } from '../combat/sales'
 import { startingPilots } from '../pilots/models'
+import { generateHirePool } from '../pilots/hiring'
 import { emptyReputation } from '../factions/models'
 import { makeRng } from '../rng'
 import { emptyStats, type SessionState } from './state'
@@ -45,6 +47,8 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     crawlerDock: startNode,
     quanta: seedQuanta(Object.keys(world.nodes), QUANTA_COUNT, rng),
     pilots: startingPilots(),
+    hirePools: {},
+    mechLots: {},
     reputation: emptyReputation(),
     intel: {},
     params: {
@@ -56,9 +60,11 @@ export function createSession(seed: number, world: WorldStatic): SessionState {
     endState: null,
   }
 
-  // Starting node gets an immediate board so the first dock isn't
-  // empty, and the company knows the state of its home port.
+  // Starting node gets an immediate board, hiring pool, and dealer lot
+  // so the first dock isn't empty, and the company knows its home port.
   state.boards[startNode] = generateBoard(startNode, world, rng, 0, markets)
+  state.hirePools[startNode] = generateHirePool(world.nodes[startNode], rng, 0)
+  state.mechLots[startNode] = generateMechLot(world.nodes[startNode], rng, 0)
   state.intel[startNode] = { observedTick: 0, market: markets[startNode] }
   state.rngState = rng.state
 

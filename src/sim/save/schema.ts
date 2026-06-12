@@ -10,6 +10,8 @@ import { Commodity, NodeMarketSchema, QuantumSchema } from '../economy/models'
 import { BoardSchema, ContractSchema } from '../contracts/models'
 import { UnitSchema } from '../combat/models'
 import { PilotSchema } from '../pilots/models'
+import { HirePoolSchema } from '../pilots/hiring'
+import { MechLotSchema } from '../combat/sales'
 import { FactionId } from '../factions/models'
 import { NodeIntelSchema } from '../intel/models'
 import type { SessionState } from '../session/state'
@@ -54,6 +56,9 @@ export const SessionStateSchema = z.object({
   crawlerDock: z.string().nullable(),
   quanta: z.array(QuantumSchema),
   pilots: z.array(PilotSchema),
+  // defaults keep pre-recruitment v6 saves loadable
+  hirePools: z.record(z.string(), HirePoolSchema).default({}),
+  mechLots: z.record(z.string(), MechLotSchema).default({}),
   reputation: z.record(FactionId, z.number()),
   // default({}) keeps pre-intel saves loadable
   intel: z.record(z.string(), NodeIntelSchema).default({}),

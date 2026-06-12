@@ -18,8 +18,8 @@ import { markets } from './market'
 import { activeContracts, boards } from './contracts'
 import { gameTime, tick } from './time'
 import { nodes, quanta, routes } from './world'
-import { crawlerDock, garage, units } from './units'
-import { pilots } from './pilots'
+import { crawlerDock, garage, mechLots, units } from './units'
+import { hirePools, pilots } from './pilots'
 import { reputation } from './reputation'
 import { intel } from './intel'
 import { rngState, sessionStats } from './session-stats'
@@ -52,6 +52,8 @@ export function gatherSessionState(): SessionState {
     crawlerDock: crawlerDock.get(),
     quanta: quanta.get(),
     pilots: pilots.get(),
+    hirePools: hirePools.get(),
+    mechLots: mechLots.get(),
     reputation: reputation.get(),
     intel: intel.get(),
     params: sessionParams.get(),
@@ -74,6 +76,8 @@ export function applySessionState(state: SessionState): void {
   crawlerDock.set(state.crawlerDock)
   quanta.set(state.quanta)
   pilots.set(state.pilots)
+  hirePools.set(state.hirePools)
+  mechLots.set(state.mechLots)
   reputation.set(state.reputation)
   intel.set(state.intel)
   sessionParams.set(state.params)

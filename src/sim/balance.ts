@@ -96,6 +96,26 @@ export const AMBUSH_CARGO_LOSS_MAX = 0.2
 /** Credits lost in an ambush when there is no cargo to take */
 export const AMBUSH_CREDIT_LOSS_MAX = 300
 
+// ── Recruitment & acquisition ───────────────────────────────────────
+
+/** Flat component of a pilot's signing bonus */
+export const HIRE_COST_BASE = 400
+
+/** Signing bonus per point of mean skill (fidelity+judgment)/2 */
+export const HIRE_COST_PER_SKILL = 4000
+
+/** Ticks before a node's hiring pool / mech offers refresh */
+export const RECRUIT_REFRESH_TICKS = 45000
+
+/** Sticker prices for mil-spec chassis at dealers */
+export const MECH_PRICES: Record<string, number> = {
+  scout: 7500,
+  trooper: 12000,
+}
+
+/** Chance a cleared garrison leaves one towable wreck for the garage */
+export const SALVAGE_MECH_CHANCE = 0.25
+
 // ── End conditions ──────────────────────────────────────────────────
 
 /** Net worth below which a docked, immobile company is bankrupt */

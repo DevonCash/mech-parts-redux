@@ -281,6 +281,87 @@ describe('strategic combat through the pipeline', () => {
   })
 })
 
+describe('recruitment & acquisition', () => {
+  it('the home port starts with a hiring pool (settlement) and dealer lot', () => {
+    const s = createSession(1, world)
+    expect(s.hirePools[START_NODE]).toBeDefined()
+    expect(s.hirePools[START_NODE].pilots.length).toBeGreaterThanOrEqual(1)
+    expect(s.mechLots[START_NODE]).toBeDefined()
+  })
+
+  it('docking at a new node generates its pool and lot', () => {
+    const s = depart(createSession(2, world))
+    expect(s.hirePools['chryse-landing']).toBeUndefined()
+    const metrics = routeMetrics(world, START_NODE, 'chryse-landing')!
+    const after = runTicks(s, travelTicks(metrics.effectiveKm) + 60)
+    expect(after.crawlerDock).toBe('chryse-landing')
+    expect(after.hirePools['chryse-landing']).toBeDefined()
+    expect(after.mechLots['chryse-landing']).toBeDefined()
+  })
+
+  it('a cleared garrison sometimes leaves a towable wreck in the garage', () => {
+    // Scan seeds until the salvage roll lands; assert the wreck's shape.
+    let found = false
+    for (let seed = 0; seed < 30 && !found; seed++) {
+      let s = createSession(seed, world)
+      const contract: CombatContract = {
+        id: `salv-test-${seed}`,
+        type: 'combat',
+        origin: START_NODE,
+        destination: START_NODE,
+        hostiles: 2,
+        pay: 5000,
+        faction: 'settler',
+        postedTick: 0,
+        deadlineTick: null,
+        boardExpiryTick: 999999,
+        status: 'active',
+      }
+      const rng = makeRng(s.rngState)
+      const site = world.nodes[START_NODE]
+      s = {
+        ...s,
+        active: [contract],
+        units: [...s.units, ...spawnHostiles(contract, site.position, rng)],
+        rngState: rng.state,
+      }
+      // Field the lance at the site
+      s = {
+        ...s,
+        garage: [],
+        units: [
+          ...s.units,
+          ...createSession(seed, world).garage.map((u, i) => ({
+            ...u,
+            lat: site.position[0] - 0.02,
+            lng: site.position[1] + i * 0.01,
+          })),
+        ],
+      }
+      for (let i = 0; i < 60000; i++) {
+        const r = advanceTick(s, world)
+        s = r.state
+        if (r.events.some((e) => e.kind === 'salvage-recovered')) {
+          found = true
+          const wreck = s.garage.find((u) => u.id === `salv-${contract.id}`)!
+          expect(wreck).toBeDefined()
+          expect(wreck.side).toBe('player')
+          expect(wreck.contractId).toBeUndefined()
+          expect(wreck.npcPilot).toBeUndefined()
+          // It's a wreck — dead cockpit, not deployable until repaired.
+          expect(unitDestroyed(wreck)).toBe(true)
+          // And it round-trips through the save.
+          expect(decodeSave(encodeSave(s))).toEqual(s)
+          break
+        }
+        if (r.events.some((e) => e.kind === 'contract-completed')) break
+        if (!s.units.some((u) => u.side === 'player' && !unitDestroyed(u))) break
+      }
+    }
+    expect(found).toBe(true)
+  }, 60000)
+})
+
 describe('save round-trip', () => {
   it('encode → decode reproduces the exact state', () => {
     const s = runTicks(depart(createSession(11, world)), 2500)
