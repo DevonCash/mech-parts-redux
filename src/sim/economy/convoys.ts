@@ -20,7 +20,7 @@ import {
 import { buildUnit } from '../combat/catalog'
 import { unitDestroyed } from '../combat/damage'
 import type { Unit } from '../combat/models'
-import { KM_PER_DEG, marsDistance } from '../constants'
+import { marsDistance, near } from '../constants'
 import { interpolateRoutePath } from '../crawler/movement'
 import { liveBandCamps } from '../raiders/bands'
 import { Commodity, type Quantum, type Route } from './models'
@@ -121,17 +121,6 @@ export function haulerProgress(unit: Unit, q: Quantum, route: Route): number {
   const toNext = marsDistance(unit.lat, unit.lng, segEnd[0], segEnd[1])
   const frac = segLen > 0 ? Math.min(1, Math.max(0, 1 - toNext / segLen)) : 0
   return Math.min(1, Math.max(0, (segIndex + frac) / totalSegments))
-}
-
-function near(
-  lat: number,
-  lng: number,
-  point: [number, number],
-  km: number,
-): boolean {
-  // Latitude lower-bounds great-circle distance — cheap reject first.
-  if (Math.abs(lat - point[0]) * KM_PER_DEG > km) return false
-  return marsDistance(lat, lng, point[0], point[1]) <= km
 }
 
 export interface ConvoyScanResult {

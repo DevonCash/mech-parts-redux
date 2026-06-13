@@ -22,6 +22,8 @@
   let dock = $state(crawlerDock.get());
   let allUnits = $state<readonly Unit[]>(units.get());
   let nodeMap = $state(nodes.get());
+  // Exact tick: deadline urgency and the DUE/OVERDUE flip must not lag.
+  // (The panel already re-renders each frame via units/quanta anyway.)
   let currentTick = $state(tick.get());
   let companyState = $state(company.get());
   let allQuanta = $state<readonly Quantum[]>(quanta.get());
@@ -42,8 +44,22 @@
     return () => unsubs.forEach((u) => u());
   });
 
+  // One pass per store update instead of a find/filter per contract row.
+  let quantaById = $derived(new Map(allQuanta.map((q) => [q.id, q])));
+  let wrecksById = $derived(new Map(allWrecks.map((w) => [w.id, w])));
+  let liveUnitCounts = $derived.by(() => {
+    const byContract = new Map<string, number>();
+    const byBand = new Map<string, number>();
+    for (const u of allUnits) {
+      if (unitDestroyed(u)) continue;
+      if (u.contractId) byContract.set(u.contractId, (byContract.get(u.contractId) ?? 0) + 1);
+      if (u.bandId) byBand.set(u.bandId, (byBand.get(u.bandId) ?? 0) + 1);
+    }
+    return { byContract, byBand };
+  });
+
   function convoyStatus(contract: EscortContract): string {
-    const q = allQuanta.find((x) => x.id === contract.quantumId);
+    const q = quantaById.get(contract.quantumId);
     if (!q) return "LOST";
     if (q.materialized) return "UNDER ATTACK";
     if (q.location === contract.origin) {
@@ -53,7 +69,7 @@
   }
 
   function wreckOf(contract: SalvageContract): CargoWreck | undefined {
-    return allWrecks.find((w) => w.id === contract.wreckId);
+    return wrecksById.get(contract.wreckId);
   }
 
   function inLootRange(contract: SalvageContract): boolean {
@@ -69,11 +85,11 @@
   }
 
   function hostilesUp(contractId: string): number {
-    return allUnits.filter((u) => u.contractId === contractId && !unitDestroyed(u)).length;
+    return liveUnitCounts.byContract.get(contractId) ?? 0;
   }
 
   function bandUp(bandId: string): number {
-    return allUnits.filter((u) => u.bandId === bandId && !unitDestroyed(u)).length;
+    return liveUnitCounts.byBand.get(bandId) ?? 0;
   }
 
   function nodeName(id: string): string {

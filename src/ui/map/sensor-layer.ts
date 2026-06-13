@@ -6,6 +6,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import { crawlerUnit, units } from '../../stores/units'
 import { SENSOR_RANGE_KM } from '../../sim/intel/models'
 import { MARS_RADIUS_KM } from '../../sim/constants'
+import { cancelLayerUpdate, scheduleLayerUpdate } from './layer-scheduler'
 
 const SOURCE_ID = 'sensor-ring'
 const LAYER_ID = 'sensor-ring-line'
@@ -64,23 +65,25 @@ export function addSensorLayer(map: MaplibreMap): () => void {
     },
   })
 
-  let pending = false
-  const refresh = () => {
-    if (pending) return
-    pending = true
-    requestAnimationFrame(() => {
-      pending = false
-      const source = map.getSource(SOURCE_ID)
-      if (source && 'setData' in source) {
-        const c = crawlerUnit()
-        if (c) (source as any).setData(ringGeoJSON(c.lat, c.lng))
-      }
-    })
+  // The ring only depends on the crawler's position — other units
+  // moving (combat, convoys) must not trigger the 72-segment rebuild.
+  let lastLat = NaN
+  let lastLng = NaN
+  const rebuild = () => {
+    const source = map.getSource(SOURCE_ID)
+    if (!source || !('setData' in source)) return
+    const c = crawlerUnit()
+    if (!c || (c.lat === lastLat && c.lng === lastLng)) return
+    lastLat = c.lat
+    lastLng = c.lng
+    ;(source as any).setData(ringGeoJSON(c.lat, c.lng))
   }
+  const refresh = () => scheduleLayerUpdate(rebuild)
   const unsubscribe = units.subscribe(refresh)
 
   return () => {
     unsubscribe()
+    cancelLayerUpdate(rebuild)
     if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID)
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
   }

@@ -26,7 +26,7 @@
     endState,
   } from "./stores/session";
   import { pushEvents } from "./stores/events";
-  import { saveGame } from "./stores/save";
+  import { saveGame, saveGameDeferred } from "./stores/save";
   import { openPanel, type DockPanel } from "./stores/ui";
 
   let { onNewGame, onExit }: { onNewGame: () => void; onExit: () => void } =
@@ -34,6 +34,10 @@
 
   const stepper = createStepper();
   const AUTOSAVE_INTERVAL_MS = 15000;
+  // Wall-clock budget for one frame's tick batch. Ticks past the
+  // deadline are dropped (same semantics as the stepper's tick cap):
+  // a heavy batch degrades effective speed instead of freezing the tab.
+  const TICK_BUDGET_MS = 8;
   let rafId: number;
   let lastAutosave = performance.now();
 
@@ -64,14 +68,29 @@
         let session = gatherSessionState();
         const events: GameEvent[] = [];
 
+        const simStart = performance.now();
+        const deadline = simStart + TICK_BUDGET_MS;
+        let consumed = 0;
         for (let i = 0; i < result.ticks; i++) {
           const r = advanceTick(session, world);
           session = r.state;
+          consumed++;
           if (r.events.length > 0) events.push(...r.events);
           if (session.endState) break;
+          if (performance.now() > deadline) break;
         }
+        const simEnd = performance.now();
 
         applySessionState(session);
+        if (import.meta.env.DEV) {
+          (window as any).__perf = {
+            simMs: simEnd - simStart,
+            applyMs: performance.now() - simEnd,
+            ticks: consumed,
+            offered: result.ticks,
+          };
+          performance.measure("sim-batch", { start: simStart, end: simEnd });
+        }
         if (events.length > 0) {
           // Combat legibility: first shots drop the clock to real time
           // (the floor — you can't slow below 1x, per the design).
@@ -85,7 +104,7 @@
         if (session.endState) {
           saveGame();
         } else if (now - lastAutosave > AUTOSAVE_INTERVAL_MS) {
-          saveGame();
+          saveGameDeferred();
           lastAutosave = now;
         }
       }

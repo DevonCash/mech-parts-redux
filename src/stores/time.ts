@@ -1,4 +1,4 @@
-import { atom } from 'nanostores'
+import { atom, computed } from 'nanostores'
 
 /**
  * Game time in milliseconds. Derived from the tick counter
@@ -10,6 +10,17 @@ export const gameTime = atom<number>(0)
 
 /** Number of simulation ticks elapsed */
 export const tick = atom<number>(0)
+
+/**
+ * Tick rounded down to 1 game-second (10-tick) buckets. UI showing
+ * coarse, second-granularity values (e.g. intel "X ago" age) can
+ * subscribe here instead of `tick` to re-render once per game-second
+ * rather than once per tick batch. Derived from `tick` — it can never
+ * desync from the source, and nanostores skips equal values so it only
+ * notifies when the bucket changes. Not for deadline/countdown
+ * precision: those must read exact `tick`.
+ */
+export const tickCoarse = computed(tick, (t) => t - (t % 10))
 
 /** Time scale: 0 = paused, 1 = real-time, 10 = fast, 100 = very fast */
 export const timeScale = atom<number>(1)

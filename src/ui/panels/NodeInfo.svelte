@@ -2,7 +2,7 @@
   import { selection, clearSelection } from "../../stores/selection";
   import { nodes, routes } from "../../stores/world";
   import { intel } from "../../stores/intel";
-  import { tick } from "../../stores/time";
+  import { tickCoarse } from "../../stores/time";
   import { crawlerDock, units } from "../../stores/units";
   import { FRESH_TICKS } from "../../sim/intel/models";
   import { formatTickDuration } from "../format";
@@ -22,7 +22,9 @@
   let allUnits = $state(units.get());
   let dock = $state(crawlerDock.get());
   let intelMap = $state(intel.get());
-  let currentTick = $state(tick.get());
+  // Intel age renders at second granularity — tickCoarse notifies once
+  // per game-second instead of every tick batch.
+  let currentTick = $state(tickCoarse.get());
 
   $effect(() => {
     const unsubs = [
@@ -32,7 +34,7 @@
       units.subscribe((v) => (allUnits = [...v])),
       crawlerDock.subscribe((v) => (dock = v)),
       intel.subscribe((v) => (intelMap = v)),
-      tick.subscribe((v) => (currentTick = v)),
+      tickCoarse.subscribe((v) => (currentTick = v)),
     ];
     return () => unsubs.forEach(u => u());
   });
@@ -75,16 +77,22 @@
       crawler.order.dockNodeId === node.id,
   );
 
+  // Road metrics depend only on (dock, target node), not the crawler's
+  // live position — memoize the graph walk so it doesn't re-run on
+  // every movement tick.
+  let roadsKm = $derived.by(() => {
+    if (!node || !dock || dock === node.id) return null;
+    const roads = routeMetrics({ nodes: nodeMap, routes: routeMap }, dock, node.id);
+    return roads ? Math.round(roads.effectiveKm) : null;
+  });
+
   // Effective km (cost-comparable: time and fuel both scale with it)
   // for both travel modes to this node
   let travelOptions = $derived(() => {
     if (!node || !crawler || isDockedHere) return null;
-    const roads = dock
-      ? routeMetrics({ nodes: nodeMap, routes: routeMap }, dock, node.id)
-      : null;
     const directKm = marsDistance(crawler.lat, crawler.lng, node.position[0], node.position[1]);
     return {
-      roadsKm: roads ? Math.round(roads.effectiveKm) : null,
+      roadsKm,
       directKm: Math.round(directKm),
     };
   });

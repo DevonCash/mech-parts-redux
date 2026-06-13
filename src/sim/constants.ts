@@ -39,3 +39,18 @@ export function marsDistance(
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
   return 2 * MARS_RADIUS_KM * Math.asin(Math.sqrt(a))
 }
+
+/**
+ * Is (lat, lng) within `km` of `point`? Latitude lower-bounds the
+ * great-circle distance, so the cheap reject runs before the haversine —
+ * the common far-apart case never pays for the trig.
+ */
+export function near(
+  lat: number,
+  lng: number,
+  point: [number, number],
+  km: number,
+): boolean {
+  if (Math.abs(lat - point[0]) * KM_PER_DEG > km) return false
+  return marsDistance(lat, lng, point[0], point[1]) <= km
+}

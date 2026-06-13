@@ -15,6 +15,7 @@ import { CRAWLER_UNIT_ID } from '../../sim/combat/catalog'
 import { unitDestroyed } from '../../sim/combat/damage'
 import type { Unit } from '../../sim/combat/models'
 import { withinSensorRange } from '../../sim/intel/models'
+import { cancelLayerUpdate, scheduleLayerUpdate } from './layer-scheduler'
 
 const SOURCE_ID = 'units'
 const ORDER_SOURCE_ID = 'unit-orders'
@@ -176,24 +177,26 @@ export function addUnitLayer(map: MaplibreMap): () => void {
     },
   })
 
-  let pending = false
-  const refresh = () => {
-    if (pending) return
-    pending = true
-    requestAnimationFrame(() => {
-      pending = false
-      const all = units.get()
-      const sel = selectedUnit.get()
-      const source = map.getSource(SOURCE_ID)
-      if (source && 'setData' in source) {
-        ;(source as any).setData(unitsGeoJSON(visibleUnits(all), sel))
+  // Skip re-feeding maplibre an empty order overlay every tick — the
+  // common case (docked, no orders) builds zero features.
+  let lastOrderCount = -1
+  const rebuild = () => {
+    const all = units.get()
+    const sel = selectedUnit.get()
+    const source = map.getSource(SOURCE_ID)
+    if (source && 'setData' in source) {
+      ;(source as any).setData(unitsGeoJSON(visibleUnits(all), sel))
+    }
+    const orderSource = map.getSource(ORDER_SOURCE_ID)
+    if (orderSource && 'setData' in orderSource) {
+      const orders = ordersGeoJSON(all)
+      if (orders.features.length > 0 || lastOrderCount !== 0) {
+        ;(orderSource as any).setData(orders)
       }
-      const orderSource = map.getSource(ORDER_SOURCE_ID)
-      if (orderSource && 'setData' in orderSource) {
-        ;(orderSource as any).setData(ordersGeoJSON(all))
-      }
-    })
+      lastOrderCount = orders.features.length
+    }
   }
+  const refresh = () => scheduleLayerUpdate(rebuild)
 
   const onClick = (e: MapMouseEvent) => {
     const unitFeatures = map.queryRenderedFeatures(e.point, { layers: [MARKER_LAYER] })
@@ -234,6 +237,7 @@ export function addUnitLayer(map: MaplibreMap): () => void {
 
   return () => {
     unsubs.forEach((u) => u())
+    cancelLayerUpdate(rebuild)
     map.off('click', onClick)
     for (const layer of [LABEL_LAYER, MARKER_LAYER, RING_LAYER, ORDER_LAYER]) {
       if (map.getLayer(layer)) map.removeLayer(layer)
