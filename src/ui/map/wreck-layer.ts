@@ -11,6 +11,8 @@ import { lootWreck } from '../../stores/contracts'
 import { pushEvents } from '../../stores/events'
 import { tick } from '../../stores/time'
 import { withinSensorRange } from '../../sim/intel/models'
+import { marsDistance } from '../../sim/constants'
+import { cancelLayerUpdate, scheduleLayerUpdate } from './layer-scheduler'
 
 const SOURCE_ID = 'wrecks'
 const LAYER_ID = 'wreck-markers'
@@ -80,20 +82,34 @@ export function addWreckLayer(map: MaplibreMap): () => void {
   }
   map.on('click', onClick)
 
-  let pending = false
-  const refresh = () => {
-    if (pending) return
-    pending = true
-    requestAnimationFrame(() => {
-      pending = false
-      const source = map.getSource(SOURCE_ID)
-      if (source && 'setData' in source) (source as any).setData(wreckGeoJSON())
-    })
+  // Crawler position only matters for the fog edge — rebuild when the
+  // wreck list itself changes, or the crawler has moved >1 km (visual
+  // tolerance; markers fade in at worst one km late).
+  let lastWrecks: unknown = null
+  let lastLat = NaN
+  let lastLng = NaN
+  const rebuild = () => {
+    const source = map.getSource(SOURCE_ID)
+    if (!source || !('setData' in source)) return
+    const w = wrecks.get()
+    const c = crawlerUnit()
+    const moved =
+      !!c &&
+      (Number.isNaN(lastLat) || marsDistance(c.lat, c.lng, lastLat, lastLng) > 1)
+    if (w === lastWrecks && !moved) return
+    lastWrecks = w
+    if (c) {
+      lastLat = c.lat
+      lastLng = c.lng
+    }
+    ;(source as any).setData(wreckGeoJSON())
   }
+  const refresh = () => scheduleLayerUpdate(rebuild)
   const unsubs = [wrecks.subscribe(refresh), units.subscribe(refresh)]
 
   return () => {
     unsubs.forEach((u) => u())
+    cancelLayerUpdate(rebuild)
     map.off('click', onClick)
     if (map.getLayer(LABEL_LAYER_ID)) map.removeLayer(LABEL_LAYER_ID)
     if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID)

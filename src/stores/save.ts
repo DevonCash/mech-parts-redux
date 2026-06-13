@@ -17,6 +17,32 @@ export function saveGame(): void {
   }
 }
 
+let pendingIdleSave = 0
+
+/**
+ * Autosave variant: snapshot the (immutable-by-convention) state now,
+ * but serialize + write it off the frame, in idle time. A newer
+ * deferred save supersedes an unflushed older one.
+ */
+export function saveGameDeferred(): void {
+  const snapshot = gatherSessionState()
+  const scheduleIdle: (fn: () => void) => number =
+    typeof requestIdleCallback === 'function'
+      ? (fn) => requestIdleCallback(fn, { timeout: 2000 })
+      : (fn) => window.setTimeout(fn, 0)
+  const cancelIdle: (id: number) => void =
+    typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout
+  if (pendingIdleSave) cancelIdle(pendingIdleSave)
+  pendingIdleSave = scheduleIdle(() => {
+    pendingIdleSave = 0
+    try {
+      localStorage.setItem(SAVE_KEY, encodeSave(snapshot))
+    } catch (e) {
+      console.warn('Save failed:', e)
+    }
+  })
+}
+
 /**
  * A save exists AND validates — otherwise the title screen would
  * offer a CONTINUE button that silently does nothing (e.g. after a

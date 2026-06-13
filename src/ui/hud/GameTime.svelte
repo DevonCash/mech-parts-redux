@@ -4,6 +4,14 @@
   import { gameTime, timeScale } from "../../stores/time";
 
   const MARS_EPOCH = new Date("2370-01-01").getTime();
+  // Constructing Intl.DateTimeFormat is expensive — build it once.
+  const DATE_FMT = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   let currentTime = $state(gameTime.get());
   let currentScale = $state(timeScale.get());
@@ -14,15 +22,10 @@
     return () => { unsubTime(); unsubScale(); };
   });
 
-  let date = $derived(
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(MARS_EPOCH + currentTime)),
-  );
+  // The display only shows minutes — bucket first so formatting runs
+  // once per displayed game-minute, not on every tick batch.
+  let minute = $derived(Math.floor(currentTime / 60_000));
+  let date = $derived(DATE_FMT.format(new Date(MARS_EPOCH + minute * 60_000)));
 
   function setGameSpeed(speed: number) {
     timeScale.set(speed);

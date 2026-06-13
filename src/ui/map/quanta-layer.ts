@@ -10,6 +10,7 @@ import { quanta, routes } from '../../stores/world'
 import { crawlerUnit, units } from '../../stores/units'
 import { quantumPosition } from '../../sim/economy/quanta'
 import { withinSensorRange } from '../../sim/intel/models'
+import { cancelLayerUpdate, scheduleLayerUpdate } from './layer-scheduler'
 
 const SOURCE_ID = 'quanta'
 const LAYER_ID = 'quanta-dots'
@@ -53,21 +54,17 @@ export function addQuantaLayer(map: MaplibreMap): () => void {
   })
 
   // setData at most once per animation frame regardless of tick rate.
-  let pending = false
-  const refresh = () => {
-    if (pending) return
-    pending = true
-    requestAnimationFrame(() => {
-      pending = false
-      const source = map.getSource(SOURCE_ID)
-      if (source && 'setData' in source) (source as any).setData(quantaGeoJSON())
-    })
+  const rebuild = () => {
+    const source = map.getSource(SOURCE_ID)
+    if (source && 'setData' in source) (source as any).setData(quantaGeoJSON())
   }
+  const refresh = () => scheduleLayerUpdate(rebuild)
   // Crawler position gates visibility, so its movement re-fogs too.
   const unsubs = [quanta.subscribe(refresh), units.subscribe(refresh)]
 
   return () => {
     unsubs.forEach((u) => u())
+    cancelLayerUpdate(rebuild)
     if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID)
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
   }

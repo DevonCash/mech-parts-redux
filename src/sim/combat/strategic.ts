@@ -122,9 +122,14 @@ function hasCooldowns(unit: Unit): boolean {
  * a cheap movement-only path. Transit is almost always quiet; this is
  * what keeps 16 permanent units affordable at 1000× compression.
  */
-function quietWorld(inputUnits: Unit[], roster: Pilot[]): boolean {
+function quietWorld(
+  inputUnits: Unit[],
+  roster: Pilot[],
+  destroyedIds: Set<string>,
+  livingPrey: Unit[],
+): boolean {
   for (const u of inputUnits) {
-    if (unitDestroyed(u)) continue
+    if (destroyedIds.has(u.id)) continue
     if (u.order.kind === 'attack' || hasCooldowns(u)) return false
 
     if (u.side !== 'hostile') {
@@ -143,8 +148,7 @@ function quietWorld(inputUnits: Unit[], roster: Pilot[]): boolean {
     // Any prey inside the leash wakes the band — players and convoys
     // alike; the war runs whether or not anyone is watching.
     const leash = u.leashKm ?? LEASH_KM
-    for (const p of inputUnits) {
-      if (p.side === 'hostile' || unitDestroyed(p)) continue
+    for (const p of livingPrey) {
       if (Math.abs(u.spawn[0] - p.lat) * KM_PER_DEG > leash) continue
       if (marsDistance(u.spawn[0], u.spawn[1], p.lat, p.lng) <= leash) return false
     }
@@ -163,13 +167,36 @@ export function advanceUnits(
   rng: Rng,
   crawlerCanMove: boolean,
 ): StrategicResult {
-  if (quietWorld(inputUnits, roster)) {
+  // Classify once per tick — unitDestroyed walks every component stack,
+  // so the quiet check, the quiet fast path, and the full pass below
+  // all share this single classification. Maintained on kills below.
+  const destroyedIds = new Set<string>()
+  // Side-partitioned target candidates, in inputUnits order so the
+  // nearest-tie winner ("first seen at min distance") is unchanged.
+  // Ids, not objects: the scan must see positions updated mid-tick.
+  const livingPrey: Unit[] = []
+  const hostileIds: string[] = []
+  const preyIds: string[] = []
+  for (const u of inputUnits) {
+    if (unitDestroyed(u)) {
+      destroyedIds.add(u.id)
+      continue
+    }
+    if (u.side === 'hostile') {
+      hostileIds.push(u.id)
+    } else {
+      livingPrey.push(u)
+      preyIds.push(u.id)
+    }
+  }
+
+  if (quietWorld(inputUnits, roster, destroyedIds, livingPrey)) {
     const docked: { unitId: string; nodeId: string }[] = []
     let units = inputUnits
     inputUnits.forEach((unit, i) => {
       if (unit.side === 'hostile' || unit.order.kind !== 'move') return
       if (unit.id === CRAWLER_UNIT_ID && !crawlerCanMove) return
-      if (unitDestroyed(unit)) return
+      if (destroyedIds.has(unit.id)) return
       const step = advanceAlongOrder(unit.lat, unit.lng, unit.order, unitSpeedKmS(unit), TICK_S)
       const dockNodeId = unit.order.dockNodeId
       if (units === inputUnits) units = [...inputUnits]
@@ -182,12 +209,6 @@ export function advanceUnits(
   const docked: { unitId: string; nodeId: string }[] = []
   const units = new Map(inputUnits.map((u) => [u.id, u]))
   const rosterById = new Map(roster.map((p) => [p.id, p]))
-  // Destroyed-state cache — checking components per unit pair every
-  // tick dominates the profile otherwise. Maintained on kills below.
-  const destroyedIds = new Set<string>()
-  for (const u of inputUnits) {
-    if (unitDestroyed(u)) destroyedIds.add(u.id)
-  }
   const order = [...units.keys()].sort()
 
   const pilotOf = (unit: Unit): Pilot =>
@@ -209,7 +230,7 @@ export function advanceUnits(
     const failure = breakdown(pilot)
 
     // Cooldowns tick down regardless of orders.
-    if (Object.keys(unit.cooldowns).length > 0) {
+    if (hasCooldowns(unit)) {
       const cooldowns: Record<string, number> = {}
       for (const [key, v] of Object.entries(unit.cooldowns)) {
         if (v > 1) cooldowns[key] = v - 1
@@ -234,8 +255,13 @@ export function advanceUnits(
       let nearestDist =
         failure === 'berserk' || unit.side === 'hostile' ? Infinity : AGGRO_RANGE_KM
       const leash = unit.leashKm ?? LEASH_KM
-      for (const other of units.values()) {
-        if (!isEnemy(unit, other) || destroyedIds.has(other.id)) continue
+      // isEnemy depends only on sides, which never change mid-tick —
+      // the side-partitioned lists ARE the isEnemy filter.
+      const candidateIds =
+        unit.side === 'hostile' ? preyIds : unit.side === 'player' ? hostileIds : []
+      for (const otherId of candidateIds) {
+        if (destroyedIds.has(otherId)) continue
+        const other = units.get(otherId)!
         // Latitude lower-bounds the great-circle distance (1° ≈ 59.2 km)
         // — a cheap reject before the haversine for the common case of
         // far-apart units.

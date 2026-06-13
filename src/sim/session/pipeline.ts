@@ -55,7 +55,7 @@ import {
 } from '../factions/models'
 import { addCargo, cargoUsed } from '../economy/market'
 import { makeRng } from '../rng'
-import { marsDistance } from '../constants'
+import { KM_PER_DEG, marsDistance } from '../constants'
 import { OBSERVE_INTERVAL, SENSOR_RANGE_KM } from '../intel/models'
 import { checkEndConditions } from './end-conditions'
 import type { EndState, GameEvent, SessionState } from './state'
@@ -341,21 +341,26 @@ export function advanceTick(state: SessionState, world: WorldStatic): TickResult
   // fight in progress decides them, not the clock.
   if (active.length > 0) {
     const playerUnits = units.filter((u) => u.side === 'player' && !unitDestroyed(u))
-    const engagedIds = active
-      .filter((c) => {
-        if (c.type !== 'combat' && c.type !== 'security') return false
-        const site =
-          c.type === 'security' ? c.site : world.nodes[c.destination]?.position
-        if (!site) return false
-        return playerUnits.some(
-          (u) => marsDistance(u.lat, u.lng, site[0], site[1]) <= ENGAGED_KM,
-        )
-      })
-      .map((c) => c.id)
+    const engagedIds = new Set(
+      active
+        .filter((c) => {
+          if (c.type !== 'combat' && c.type !== 'security') return false
+          const site =
+            c.type === 'security' ? c.site : world.nodes[c.destination]?.position
+          if (!site) return false
+          return playerUnits.some(
+            (u) =>
+              // Latitude lower-bounds great-circle distance — cheap reject first.
+              Math.abs(u.lat - site[0]) * KM_PER_DEG <= ENGAGED_KM &&
+              marsDistance(u.lat, u.lng, site[0], site[1]) <= ENGAGED_KM,
+          )
+        })
+        .map((c) => c.id),
+    )
 
     let failed: typeof active = []
     for (const c of active) {
-      if (engagedIds.includes(c.id)) continue
+      if (engagedIds.has(c.id)) continue
       const result = updateActiveContracts([c], tick)
       if (result.failed.length > 0) failed = [...failed, ...result.failed]
     }
