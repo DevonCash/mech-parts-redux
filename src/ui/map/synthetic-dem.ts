@@ -4,8 +4,12 @@
  * runtime. Stands in for /data/mars-terrain.pmtiles when the real
  * MOLA tileset isn't present (dev, CI, fresh clones): same encoding,
  * same tile grid, zero data files.
+ *
+ * Rasterization (~262k heightmap samples per tile) and PNG encoding
+ * run in a dedicated worker (dem-worker.ts) so tile generation never
+ * blocks the main thread during pan/zoom.
  */
-import { marsElevation } from '../../sim/terrain/heightmap'
+import { TILE_SIZE } from './synthetic-dem-core'
 import type { TerrainDemSource } from './terrain-shader'
 
 export const SYNTHETIC_DEM_PROTOCOL = 'synthetic-dem'
@@ -13,61 +17,64 @@ export const SYNTHETIC_DEM_TILE_URL = `${SYNTHETIC_DEM_PROTOCOL}://{z}/{x}/{y}`
 /** Matches the real pipeline's tileset — higher zooms overzoom z7. */
 export const SYNTHETIC_DEM_MAXZOOM = 7
 
-const TILE_SIZE = 512
+// ── Worker RPC ──────────────────────────────────────────────────────
+let worker: Worker | null = null
+let nextRequestId = 1
+const pending = new Map<
+  number,
+  { resolve: (data: ArrayBuffer) => void; reject: (e: Error) => void }
+>()
 
-/** Inverse Web Mercator for a tile pixel row. */
-function tileLat(z: number, y: number, py: number): number {
-  const n = 1 << z
-  const mercY = (y + py / TILE_SIZE) / n
-  return (Math.atan(Math.sinh(Math.PI * (1 - 2 * mercY))) * 180) / Math.PI
-}
-
-function tileLng(z: number, x: number, px: number): number {
-  const n = 1 << z
-  return ((x + px / TILE_SIZE) / n) * 360 - 180
-}
-
-/**
- * Rasterize one DEM tile. Terrarium encoding, matching the shader and
- * maplibre raster-dem decoder: elevation = (R*256 + G + B/256) − 32768.
- */
-export function syntheticTileImageData(z: number, x: number, y: number): ImageData {
-  const data = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4)
-  for (let j = 0; j < TILE_SIZE; j++) {
-    const lat = tileLat(z, y, j + 0.5)
-    for (let i = 0; i < TILE_SIZE; i++) {
-      const lng = tileLng(z, x, i + 0.5)
-      const v = Math.round(marsElevation(lat, lng)) + 32768
-      const o = (j * TILE_SIZE + i) * 4
-      data[o] = v >> 8
-      data[o + 1] = v & 255
-      data[o + 2] = 0
-      data[o + 3] = 255
+function demWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(new URL('./dem-worker.ts', import.meta.url), {
+      type: 'module',
+    })
+    worker.onmessage = (
+      e: MessageEvent<{ id: number; data?: ArrayBuffer; error?: string }>,
+    ) => {
+      const req = pending.get(e.data.id)
+      if (!req) return
+      pending.delete(e.data.id)
+      if (e.data.error !== undefined) req.reject(new Error(e.data.error))
+      else req.resolve(e.data.data!)
     }
   }
-  return new ImageData(data, TILE_SIZE, TILE_SIZE)
+  return worker
 }
 
-// PNG-encoded tiles for the raster-dem source. MapLibre caches tiles
-// itself; this small cache only absorbs the dem + hillshade sources
-// both asking for the same coordinates.
-const pngCache = new Map<string, Promise<ArrayBuffer>>()
-const PNG_CACHE_MAX = 64
-
-async function encodePng(imageData: ImageData): Promise<ArrayBuffer> {
-  const canvas = new OffscreenCanvas(imageData.width, imageData.height)
-  canvas.getContext('2d')!.putImageData(imageData, 0, 0)
-  const blob = await canvas.convertToBlob({ type: 'image/png' })
-  return blob.arrayBuffer()
+function requestTile(
+  kind: 'raw' | 'png',
+  z: number,
+  x: number,
+  y: number,
+): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const id = nextRequestId++
+    pending.set(id, { resolve, reject })
+    demWorker().postMessage({ id, kind, z, x, y })
+  })
 }
 
 /** DEM provider for the hillshade shader — skips the PNG round-trip. */
 export function syntheticDemSource(): TerrainDemSource {
   return {
     maxzoom: SYNTHETIC_DEM_MAXZOOM,
-    getTile: (z, x, y) => createImageBitmap(syntheticTileImageData(z, x, y)),
+    getTile: async (z, x, y) => {
+      const buf = await requestTile('raw', z, x, y)
+      return createImageBitmap(
+        new ImageData(new Uint8ClampedArray(buf), TILE_SIZE, TILE_SIZE),
+      )
+    },
   }
 }
+
+// PNG-encoded tiles for the raster-dem source. MapLibre caches decoded
+// tiles itself; this cache absorbs re-requests across source reloads
+// and the dem + hillshade sources asking for the same coordinates.
+// PNGs are small (tens of KB) — the raw-pixel cache lives in the worker.
+const pngCache = new Map<string, Promise<ArrayBuffer>>()
+const PNG_CACHE_MAX = 128
 
 /** MapLibre protocol handler: synthetic-dem://{z}/{x}/{y} → PNG. */
 export async function syntheticDemHandler(params: {
@@ -81,7 +88,7 @@ export async function syntheticDemHandler(params: {
   const key = `${tz}/${x >> (z - tz)}/${y >> (z - tz)}`
   let png = pngCache.get(key)
   if (!png) {
-    png = encodePng(syntheticTileImageData(tz, x >> (z - tz), y >> (z - tz)))
+    png = requestTile('png', tz, x >> (z - tz), y >> (z - tz))
     if (pngCache.size >= PNG_CACHE_MAX) {
       const oldest = pngCache.keys().next().value
       if (oldest !== undefined) pngCache.delete(oldest)
