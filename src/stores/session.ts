@@ -16,7 +16,7 @@ import { TICK_DURATION_MS } from '../sim/tick'
 import { company } from './company'
 import { markets } from './market'
 import { activeContracts, boards } from './contracts'
-import { gameTime, tick, tickCoarse } from './time'
+import { gameTime, tick } from './time'
 import { nodes, quanta, routes, wrecks } from './world'
 import { crawlerDock, garage, mechLots, units } from './units'
 import { hirePools, pilots } from './pilots'
@@ -75,7 +75,6 @@ export function gatherSessionState(): SessionState {
 /** Fan a SessionState back out to the UI atoms. */
 export function applySessionState(state: SessionState): void {
   tick.set(state.tick)
-  tickCoarse.set(state.tick - (state.tick % 10))
   gameTime.set(state.tick * TICK_DURATION_MS)
   rngState.set(state.rngState)
   company.set(state.company)

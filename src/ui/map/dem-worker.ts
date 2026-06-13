@@ -37,15 +37,17 @@ self.onmessage = async (e: MessageEvent<TileRequest>) => {
   const port = self as unknown as Worker
   try {
     const pixels = tilePixels(z, x, y)
+    // ImageData wraps the cached buffer by reference; createImageBitmap and
+    // putImageData only read it, so the cache entry stays valid.
+    const image = new ImageData(pixels, TILE_SIZE, TILE_SIZE)
     if (kind === 'raw') {
-      // Transfer a copy — transferring the cached buffer would neuter it.
-      const copy = pixels.slice()
-      port.postMessage({ id, data: copy.buffer }, [copy.buffer])
+      // Build the bitmap here and transfer it — the main thread skips the
+      // ~1 MB ImageData copy + decode it used to do per tile.
+      const bitmap = await createImageBitmap(image)
+      port.postMessage({ id, bitmap }, [bitmap])
     } else {
       const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE)
-      canvas
-        .getContext('2d')!
-        .putImageData(new ImageData(pixels, TILE_SIZE, TILE_SIZE), 0, 0)
+      canvas.getContext('2d')!.putImageData(image, 0, 0)
       const blob = await canvas.convertToBlob({ type: 'image/png' })
       const png = await blob.arrayBuffer()
       port.postMessage({ id, data: png }, [png])

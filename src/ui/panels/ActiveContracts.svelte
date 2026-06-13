@@ -7,7 +7,7 @@
   } from "../../stores/contracts";
   import { crawlerDock, crawlerUnit, units } from "../../stores/units";
   import { nodes, quanta, wrecks } from "../../stores/world";
-  import { tickCoarse } from "../../stores/time";
+  import { tick } from "../../stores/time";
   import { company } from "../../stores/company";
   import { LOOT_RANGE_KM } from "../../sim/balance";
   import type { Contract, EscortContract, SalvageContract } from "../../sim/contracts/models";
@@ -22,9 +22,9 @@
   let dock = $state(crawlerDock.get());
   let allUnits = $state<readonly Unit[]>(units.get());
   let nodeMap = $state(nodes.get());
-  // Countdowns only display ~second granularity — tickCoarse notifies
-  // once per game-second instead of every tick batch.
-  let currentTick = $state(tickCoarse.get());
+  // Exact tick: deadline urgency and the DUE/OVERDUE flip must not lag.
+  // (The panel already re-renders each frame via units/quanta anyway.)
+  let currentTick = $state(tick.get());
   let companyState = $state(company.get());
   let allQuanta = $state<readonly Quantum[]>(quanta.get());
   let allWrecks = $state<readonly CargoWreck[]>(wrecks.get());
@@ -36,7 +36,7 @@
       crawlerDock.subscribe((v) => (dock = v)),
       units.subscribe((v) => (allUnits = v)),
       nodes.subscribe((v) => (nodeMap = v)),
-      tickCoarse.subscribe((v) => (currentTick = v)),
+      tick.subscribe((v) => (currentTick = v)),
       company.subscribe((v) => (companyState = v)),
       quanta.subscribe((v) => (allQuanta = v)),
       wrecks.subscribe((v) => (allWrecks = v)),

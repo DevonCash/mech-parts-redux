@@ -57,17 +57,6 @@ export interface StrategicEvent {
   attackerSide?: Unit['side']
 }
 
-/**
- * One predation rule for the whole sim: hostiles prey on everyone,
- * players auto-acquire hostiles only (attacking a neutral takes an
- * explicit order — that's piracy), neutrals never fight.
- */
-function isEnemy(unit: Unit, other: Unit): boolean {
-  if (unit.side === 'neutral') return false
-  if (unit.side === 'hostile') return other.side !== 'hostile'
-  return other.side === 'hostile'
-}
-
 export interface StrategicResult {
   units: Unit[]
   /** Player roster with combat stress applied */
@@ -168,26 +157,16 @@ export function advanceUnits(
   crawlerCanMove: boolean,
 ): StrategicResult {
   // Classify once per tick — unitDestroyed walks every component stack,
-  // so the quiet check, the quiet fast path, and the full pass below
-  // all share this single classification. Maintained on kills below.
+  // so the quiet check, the quiet fast path, and the full pass below all
+  // share this single classification. The quiet fast path (dominant
+  // during transit) needs only the destroyed set and the living-prey
+  // list, so the full-pass id lists are deferred past the gate to keep
+  // that path allocation-light. Maintained on kills below.
   const destroyedIds = new Set<string>()
-  // Side-partitioned target candidates, in inputUnits order so the
-  // nearest-tie winner ("first seen at min distance") is unchanged.
-  // Ids, not objects: the scan must see positions updated mid-tick.
   const livingPrey: Unit[] = []
-  const hostileIds: string[] = []
-  const preyIds: string[] = []
   for (const u of inputUnits) {
-    if (unitDestroyed(u)) {
-      destroyedIds.add(u.id)
-      continue
-    }
-    if (u.side === 'hostile') {
-      hostileIds.push(u.id)
-    } else {
-      livingPrey.push(u)
-      preyIds.push(u.id)
-    }
+    if (unitDestroyed(u)) destroyedIds.add(u.id)
+    else if (u.side !== 'hostile') livingPrey.push(u)
   }
 
   if (quietWorld(inputUnits, roster, destroyedIds, livingPrey)) {
@@ -205,6 +184,16 @@ export function advanceUnits(
     })
     return { units, pilots: roster, events: [], docked }
   }
+  // Full combat pass. Side-partitioned target candidates, in inputUnits
+  // order so the nearest-tie winner ("first seen at min distance") is
+  // unchanged. Ids, not objects: the scan must see positions updated
+  // mid-tick. preyIds reuses the living-prey list built above.
+  const preyIds = livingPrey.map((u) => u.id)
+  const hostileIds: string[] = []
+  for (const u of inputUnits) {
+    if (u.side === 'hostile' && !destroyedIds.has(u.id)) hostileIds.push(u.id)
+  }
+
   const events: StrategicEvent[] = []
   const docked: { unitId: string; nodeId: string }[] = []
   const units = new Map(inputUnits.map((u) => [u.id, u]))
@@ -255,8 +244,11 @@ export function advanceUnits(
       let nearestDist =
         failure === 'berserk' || unit.side === 'hostile' ? Infinity : AGGRO_RANGE_KM
       const leash = unit.leashKm ?? LEASH_KM
-      // isEnemy depends only on sides, which never change mid-tick —
-      // the side-partitioned lists ARE the isEnemy filter.
+      // One predation rule for the whole sim: hostiles prey on everyone
+      // (preyIds = living non-hostiles), players auto-acquire hostiles
+      // only (attacking a neutral takes an explicit order — that's
+      // piracy), neutrals never fight. Sides never change mid-tick, so
+      // the pre-partitioned id lists are exactly that filter.
       const candidateIds =
         unit.side === 'hostile' ? preyIds : unit.side === 'player' ? hostileIds : []
       for (const otherId of candidateIds) {

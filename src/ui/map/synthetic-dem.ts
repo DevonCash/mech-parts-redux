@@ -9,7 +9,6 @@
  * run in a dedicated worker (dem-worker.ts) so tile generation never
  * blocks the main thread during pan/zoom.
  */
-import { TILE_SIZE } from './synthetic-dem-core'
 import type { TerrainDemSource } from './terrain-shader'
 
 export const SYNTHETIC_DEM_PROTOCOL = 'synthetic-dem'
@@ -18,29 +17,49 @@ export const SYNTHETIC_DEM_TILE_URL = `${SYNTHETIC_DEM_PROTOCOL}://{z}/{x}/{y}`
 export const SYNTHETIC_DEM_MAXZOOM = 7
 
 // ── Worker RPC ──────────────────────────────────────────────────────
+interface WorkerReply {
+  id: number
+  bitmap?: ImageBitmap
+  data?: ArrayBuffer
+  error?: string
+}
+
 let worker: Worker | null = null
 let nextRequestId = 1
 const pending = new Map<
   number,
-  { resolve: (data: ArrayBuffer) => void; reject: (e: Error) => void }
+  { resolve: (reply: WorkerReply) => void; reject: (e: Error) => void }
 >()
 
+function failAllPending(reason: string): void {
+  for (const req of pending.values()) req.reject(new Error(reason))
+  pending.clear()
+}
+
 function demWorker(): Worker {
-  if (!worker) {
-    worker = new Worker(new URL('./dem-worker.ts', import.meta.url), {
-      type: 'module',
-    })
-    worker.onmessage = (
-      e: MessageEvent<{ id: number; data?: ArrayBuffer; error?: string }>,
-    ) => {
-      const req = pending.get(e.data.id)
-      if (!req) return
-      pending.delete(e.data.id)
-      if (e.data.error !== undefined) req.reject(new Error(e.data.error))
-      else req.resolve(e.data.data!)
-    }
+  if (worker) return worker
+  const w = new Worker(new URL('./dem-worker.ts', import.meta.url), {
+    type: 'module',
+  })
+  w.onmessage = (e: MessageEvent<WorkerReply>) => {
+    const req = pending.get(e.data.id)
+    if (!req) return
+    pending.delete(e.data.id)
+    if (e.data.error !== undefined) req.reject(new Error(e.data.error))
+    else req.resolve(e.data)
   }
-  return worker
+  // A worker-level failure (module load error, uncaught throw) would
+  // otherwise leave every pending tile promise unsettled forever —
+  // terrain just never loads, with no recovery. Reject the in-flight
+  // requests and drop the handle so the next request respawns a worker.
+  const onFailure = (msg: string) => {
+    failAllPending(msg)
+    if (worker === w) worker = null
+  }
+  w.onerror = (e) => onFailure(`DEM worker error: ${e.message || 'unknown'}`)
+  w.onmessageerror = () => onFailure('DEM worker message deserialization failed')
+  worker = w
+  return w
 }
 
 function requestTile(
@@ -48,7 +67,7 @@ function requestTile(
   z: number,
   x: number,
   y: number,
-): Promise<ArrayBuffer> {
+): Promise<WorkerReply> {
   return new Promise((resolve, reject) => {
     const id = nextRequestId++
     pending.set(id, { resolve, reject })
@@ -56,16 +75,13 @@ function requestTile(
   })
 }
 
-/** DEM provider for the hillshade shader — skips the PNG round-trip. */
+/** DEM provider for the hillshade shader — skips the PNG round-trip.
+ *  The worker builds and transfers the bitmap, so the main thread does
+ *  no per-tile pixel copy. */
 export function syntheticDemSource(): TerrainDemSource {
   return {
     maxzoom: SYNTHETIC_DEM_MAXZOOM,
-    getTile: async (z, x, y) => {
-      const buf = await requestTile('raw', z, x, y)
-      return createImageBitmap(
-        new ImageData(new Uint8ClampedArray(buf), TILE_SIZE, TILE_SIZE),
-      )
-    },
+    getTile: async (z, x, y) => (await requestTile('raw', z, x, y)).bitmap ?? null,
   }
 }
 
@@ -88,7 +104,7 @@ export async function syntheticDemHandler(params: {
   const key = `${tz}/${x >> (z - tz)}/${y >> (z - tz)}`
   let png = pngCache.get(key)
   if (!png) {
-    png = requestTile('png', tz, x >> (z - tz), y >> (z - tz))
+    png = requestTile('png', tz, x >> (z - tz), y >> (z - tz)).then((r) => r.data!)
     if (pngCache.size >= PNG_CACHE_MAX) {
       const oldest = pngCache.keys().next().value
       if (oldest !== undefined) pngCache.delete(oldest)
