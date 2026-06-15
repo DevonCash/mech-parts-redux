@@ -201,12 +201,28 @@ function dockedTurn(state: SessionState): SessionState {
   return next
 }
 
-function playSession(seed: number, maxTicks: number, creditTarget?: number): SessionState {
+/**
+ * Yield to the event loop every this many ticks during a long session.
+ * A full session is tens of millions of ticks of synchronous work; without
+ * periodic yields the Vitest worker can't answer the main thread's progress
+ * RPC and the run dies with "Timeout calling onTaskUpdate" even though every
+ * assertion passes. 250k ticks is ~4s of work between yields — frequent
+ * enough to keep the heartbeat alive, rare enough to cost nothing.
+ */
+const YIELD_EVERY_TICKS = 250_000
+const yieldToLoop = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+async function playSession(
+  seed: number,
+  maxTicks: number,
+  creditTarget?: number,
+): Promise<SessionState> {
   let state = createSession(seed, world)
   if (creditTarget) {
     state = { ...state, params: { ...state.params, creditTarget } }
   }
   let guard = 0
+  let sinceYield = 0
 
   while (state.tick < maxTicks && !state.endState) {
     if (state.crawlerDock !== null) {
@@ -258,38 +274,72 @@ function playSession(seed: number, maxTicks: number, creditTarget?: number): Ses
       }
     }
     if (++guard > 20000) break
+
+    // Surface to the event loop periodically so the worker stays
+    // responsive across a multi-minute run (see YIELD_EVERY_TICKS).
+    sinceYield += 20000
+    if (sinceYield >= YIELD_EVERY_TICKS) {
+      sinceYield = 0
+      await yieldToLoop()
+    }
   }
 
   return state
 }
 
 describe('full-loop playthrough (bot)', () => {
-  // Trips are millions of ticks at plausible crawler speeds, so the
-  // default run is a small sample: several seeds to a reduced credit
-  // target (same loop, fewer hauls) in ~minutes. The full-distance
-  // session and the deeper targets are the same code, just longer —
-  // run them with FULL_PLAYTHROUGH=1 (e.g. before a balance-sensitive
-  // merge or as a nightly).
+  // A win is millions of ticks per haul at plausible crawler speeds —
+  // even the nearest contract off the starting board is ~1,500 effective
+  // km (~1.4M ticks), and a target takes several hauls. So the default
+  // run keeps only the *fast* guards below (loop wiring + the do-nothing
+  // invariant, both bounded to tens of thousands of ticks). The balance
+  // sweep — the bot must actually *win* across seeds and a full session —
+  // is the same code run to real targets and lives behind FULL_PLAYTHROUGH=1
+  // (run before a balance-sensitive merge or as a nightly).
   const SESSION_BUDGET = 120_000_000
   const SMOKE_TARGET = 8_000
   const SHORT_TARGET = 12_000
   const deep = !!process.env.FULL_PLAYTHROUGH
 
-  it('wins across multiple seeds (balance is not seed-lucky)', () => {
+  it('the loop is wired: board fills, bot accepts and departs, fuel burns', () => {
+    let state = createSession(7, world)
+
+    // Docked at the start node: the board fills within a few ticks.
+    for (let i = 0; i < 5_000 && !state.boards[state.crawlerDock!]?.contracts.length; i++) {
+      state = advanceTick(state, world).state
+    }
+    expect(state.boards[state.crawlerDock!]?.contracts.length).toBeGreaterThan(0)
+
+    // One docked turn takes a job, refuels, and rolls out.
+    state = dockedTurn(state)
+    expect(state.active.length).toBeGreaterThan(0)
+    expect(state.crawlerDock).toBeNull()
+    expect(findCrawler(state.units)?.order.kind).toBe('move')
+
+    // In transit, fuel burns and nothing throws over a bounded run.
+    const fuelAtDepart = state.company.fuel
+    for (let i = 0; i < 60_000 && state.crawlerDock === null && !state.endState; i++) {
+      state = advanceTick(state, world).state
+    }
+    expect(state.company.fuel).toBeLessThan(fuelAtDepart)
+    expect(findCrawler(state.units)).toBeDefined()
+  })
+
+  it.runIf(deep)('wins across multiple seeds (balance is not seed-lucky)', async () => {
     for (const seed of [1, 7, 42]) {
-      const result = playSession(seed, SESSION_BUDGET, SMOKE_TARGET)
+      const result = await playSession(seed, SESSION_BUDGET, SMOKE_TARGET)
       expect(result.endState?.kind, `seed ${seed}`).toBe('victory')
     }
   }, 1_200_000)
 
-  it.runIf(deep)('a contract-following bot wins a full session', () => {
-    const result = playSession(2026, SESSION_BUDGET)
+  it.runIf(deep)('a contract-following bot wins a full session', async () => {
+    const result = await playSession(2026, SESSION_BUDGET)
     expect(result.endState?.kind).toBe('victory')
   }, 1_200_000)
 
-  it.runIf(deep)('wins deeper sessions across seeds', () => {
+  it.runIf(deep)('wins deeper sessions across seeds', async () => {
     for (const seed of [1, 7, 42]) {
-      const result = playSession(seed, SESSION_BUDGET, SHORT_TARGET)
+      const result = await playSession(seed, SESSION_BUDGET, SHORT_TARGET)
       expect(result.endState?.kind, `seed ${seed}`).toBe('victory')
     }
   }, 1_200_000)
